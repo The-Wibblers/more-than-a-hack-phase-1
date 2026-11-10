@@ -9,6 +9,7 @@ Everything lands in data/, which is gitignored.
 import argparse
 import json
 import shutil
+import ssl
 import urllib.request
 from pathlib import Path
 
@@ -18,13 +19,22 @@ SKILLCORNER_RAW = "https://raw.githubusercontent.com/SkillCorner/opendata/master
 SKILLCORNER_LFS = "https://media.githubusercontent.com/media/SkillCorner/opendata/master"
 
 
+def _tls():
+    """certifi's certificates when installed (requirements.txt): python.org's macOS Python has none of its own."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return None
+
+
 def fetch(url: str, dest: Path, size: int | None = None) -> None:
     if dest.exists() and (size is None or dest.stat().st_size == size):
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     print(f"  {dest.name}", flush=True)
-    with urllib.request.urlopen(url) as r, open(part, "wb") as out:
+    with urllib.request.urlopen(url, context=_tls()) as r, open(part, "wb") as out:
         shutil.copyfileobj(r, out, length=1 << 20)
     part.replace(dest)
 

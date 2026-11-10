@@ -14,6 +14,8 @@ tqdm==4.67.1
 # reads SkillCorner's open data (external/) and the Metrica export (starter/); pinned to the version the
 # starter repository used, which the Metrica FIFA/EPTS export is known to load under
 kloppy==3.18.0
+# certificates for external/download.py (python.org's macOS Python ships with none)
+certifi==2025.01.31
 
 # starter/ notebooks and plotting only
 matplotlib==3.9.2
