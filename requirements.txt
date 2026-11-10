@@ -1,0 +1,20 @@
+# Everything this repository needs, pinned to the versions the submission was produced with (Python 3.12).
+# Also needed, outside pip: ffmpeg on the PATH (every script that reads the video decodes with it), and Node.js for
+# the viewer (viewer/package.json).
+#
+# The scorer alone (evaluation/) and starter/baseline.py need only numpy and pandas.
+
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.15.2
+opencv-python-headless==4.11.0.86
+torch==2.7.0
+tqdm==4.67.1
+
+# reads SkillCorner's open data (external/) and the Metrica export (starter/); pinned to the version the
+# starter repository used, which the Metrica FIFA/EPTS export is known to load under
+kloppy==3.18.0
+
+# starter/ notebooks and plotting only
+matplotlib==3.9.2
+notebook==7.2.2
