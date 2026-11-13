@@ -8,8 +8,8 @@ restart where nothing else says play stopped (one standing at a corner: a corner
 throw-in, a substitution, an injury seen to -- players leave the pitch only while the ball is dead).
 
 When it stopped: the whistle; the flag; else, for a tagged or set-up restart, the first out before it (from OUT_S
-before to TAG_LEAD_S after): the assistant's flag, or our ball leaving the pitch -- the flag if raised just after;
-not where the ball is seen flying with no arc found for it (ball3d.py: the ground point of a ball in the air can lie
+before to TAG_LEAD_S after): the assistant's flag, or our ball leaving the pitch (and staying off it) -- the ball
+when it crossed, the flag only follows it; not where the ball is seen flying with no arc found for it (ball3d.py: the ground point of a ball in the air can lie
 past the far touchline or a goal line over the pitch) -- else when the fastest players eased off.
 
 When it restarted: where the ball is reliable -- a goal kick or a corner, the placed ball struck in its goal area or at
@@ -20,7 +20,7 @@ the tag takes the set piece; otherwise the team of the player at the ball when i
 
   python stoppages.py      -> data/ballcv/BAR-ATH_stoppages.json
 """
-import json, os, sys
+import json, os, sys, warnings
 from collections import Counter
 import numpy as np
 
@@ -97,18 +97,14 @@ def setups(P, V, known, halves, kickoffs):
 def out_moment(tag, after, fastest, flag_ups, exits):
     """(frame, how) play stopped for a tagged (or set-up) restart, not before frame after: of the assistant's flags and
     the ball's (sure) exits from OUT_S before the tag to TAG_LEAD_S after it (a tag can come just before the out), the
-    first -- after it the ball is dead, and moved about off the pitch -- and if the assistant raised the flag within
-    FLAG_LAG_S after that exit, the flag (the tag says it went out; the ball only says when). With neither, the largest drop in the fastest players' speed before the tag."""
+    first -- after it the ball is dead, and moved about off the pitch; an exit is when the ball crossed, a flag only
+    follows it. With neither, the largest drop in the fastest players' speed before the tag."""
     lo, hi = max(after, tag - OUT_S * 25), tag + TAG_LEAD_S * 25
     if lo > hi:
         return after - 1, 'within'                                            # inside the stoppage before it
     seen = [(f, f, 'assistant flag') for f in flag_ups if lo <= f <= hi] + [(f, f, 'ball exit') for f in exits if lo <= f <= hi]
     if seen:
         _, f, how = min(seen)                                                 # the first: after it the ball is dead
-        if how == 'ball exit':
-            flag = [g for g in flag_ups if f <= g <= f + FLAG_LAG_S * 25]
-            if flag:
-                return flag[0], 'assistant flag'
         return f, how
     if lo > tag:
         return after - 1, 'within'
@@ -140,20 +136,21 @@ def cmd_build():
                 return f
         return min(limit, start + predict.WHISTLE_CAP)
 
-    # placed balls struck: still for PLACED_S, then off at BREAK_MS or more
+    # placed balls struck: still for PLACED_S (placed, or held while the taker waits), then off at BREAK_MS or more
+    # within PLACED_S -- timed at the first frame it moves that fast. The rest is the second before it starts to move:
+    # a kick takes the ball up to its speed over several frames of the track, and a held ball is put down first
     need = int(PLACED_S * 25)
+    still = lambda i: (lambda w: len(w) >= need / 2 and np.max(np.linalg.norm(G[w] - np.median(G[w], 0), axis=1)) < CONTACT_M)(
+        [j for j in range(max(0, i - need + 1), i + 1) if fr[j] > fr[i] - need])
+    speed5 = lambda i: (lambda j: np.linalg.norm(G[j] - G[i]) / (fr[j] - fr[i]) * 25 if j > i else 0.0)(
+        max([j for j in range(i, min(len(fr), i + 6)) if fr[j] <= fr[i] + 5]))
     strikes = []
-    for i, f in enumerate(fr):
-        prev = [j for j in range(max(0, i - need), i) if fr[j] >= f - need]
-        nxt = [j for j in range(i + 1, min(len(fr), i + 6)) if fr[j] <= f + 5]
-        if len(prev) < need / 2 or not nxt:
-            continue
-        P0 = G[prev]
-        if np.max(np.linalg.norm(P0 - np.median(P0, 0), axis=1)) >= CONTACT_M:
-            continue
-        j = nxt[-1]
-        if np.linalg.norm(G[j] - G[i - 1]) / (fr[j] - fr[i - 1]) * 25 >= BREAK_MS:
-            strikes.append(int(f))
+    for i, f in enumerate(fr[:-1]):
+        if not still(i) or still(i + 1):
+            continue                                                  # not the last frame at rest
+        off = next((fr[j] for j in range(i, len(fr)) if fr[j] <= f + need and speed5(j) >= BREAK_MS), None)
+        if off is not None:
+            strikes.append(int(off))
     strikes = sorted(set(s for k_, s in enumerate(strikes) if k_ == 0 or s - strikes[k_ - 1] > need))
 
     P = np.load(ob.S + 'tactical.npz')['P'][..., :2]
@@ -189,15 +186,35 @@ def cmd_build():
             was_in = True
         elif (was_in and past[i - 1] > predict.OUT_M and past[i] > predict.OUT_M and fr[i] - fr[i - 1] <= 3
               and sure[i - 1] and sure[i]):
-            exits.append(int(fr[i - 1])); was_in = False
+            # ... and it stays out: a ball followed back onto the pitch within PLACED_S never left it (a dropping ball's
+            # ground point runs in from past the line) -- followed, frame to frame no faster than a ball (VMAX_MPF): a
+            # jump back in is another object, not the ball
+            back = False
+            for j in range(i + 1, len(fr)):
+                if fr[j] > fr[i] + PLACED_S * 25 or np.linalg.norm(G[j] - G[j - 1]) > ob.VMAX_MPF * (fr[j] - fr[j - 1]):
+                    break
+                if past[j] < 0:
+                    back = True; break
+            if not back:
+                exits.append(int(fr[i - 1]))
+            was_in = False
     tags = [t for t in tagged_outs() if half_of(t[0])]
     kickoffs = [a for _h, a, _b in halves] + [t for t, k, _ in tags if k == 'kick-off']
     found = setups(tac[..., :2] * [L, W], spd, [t for t, _, _ in tags] + whistles, [(a, b) for _h, a, b in halves], kickoffs)
     print(f'{len(found)} restart set-ups where nothing else says play stopped: {dict(Counter(k for _, k in found))}')
     def restart_of(kind, s, earliest, limit, rw):
         """the restart we can see: a goal kick or a corner, the placed ball struck in its goal area or at its corner arc;
-        a stoppage whistle's free kick, on the referee's restart whistle (the kick after it). Else None: the players
-        resuming ends it."""
+        a throw-in, the held ball struck from the body of a player on a touchline (within MARGIN_M: the thrower; held
+        overhead, its ground point lies metres inside the line); a stoppage whistle's free kick, on the referee's restart
+        whistle (the kick after it). Else None: the players resuming ends it."""
+        if kind == 'throw-in':
+            for f in strikes:
+                if earliest <= f <= limit:
+                    near = ob.bodies(M, P, f, track[f][:2])
+                    if near and near[0][0] <= ob.MAX_REACH_M:
+                        y = P[f, near[0][1], 1] * W
+                        if min(y, W - y) <= MARGIN_M:
+                            return f
         if kind in ('goal kick', 'corner'):
             for f in strikes:
                 if earliest <= f <= limit:
@@ -263,6 +280,42 @@ def cmd_build():
             if near and near[0][0] <= ob.MAX_REACH_M:
                 k = near[0][1]
                 st['restart_team'] = ob.keeper_team(P, g0, k, sides) if k in keepers else team[k]
+        if not st['restart_team'] and st['waits_for'] == 'throw-in' and r is not None:
+            # the ball not seen at the throw: the thrower stands on or behind a touchline -- the player furthest out
+            # over one (or nearest it) in the PLACED_S before, if he is on it (within MARGIN_M)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', RuntimeWarning)
+                y = np.nanmedian(P[max(0, r - int(PLACED_S * 25)):r, :, 1], 0) * W
+            inside = np.where(np.isfinite(y), np.minimum(y, W - y), np.inf)
+            k = int(np.argmin(inside))
+            if inside[k] <= MARGIN_M:
+                st['restart_team'] = team[k]
+    # a restart we saw played is dead until it is sure whose it is: from the first frame on which only one player could
+    # still get to the ball before it is received (the next break in its motion, ownball's events) -- running at
+    # RUN_MS to within MAX_REACH_M of where the ball will be -- and that player's team has it
+    import player_track
+    breaks = sorted(e['f'] for e in json.load(open(ob.OUT_JSON))['events'] if e['kind'] in ('touch', 'deflection'))
+    for st in out:
+        r = st['restart']
+        if st['ended_by'] != 'restart':
+            continue
+        rec = next((f for f in breaks if f > r + ob.FIT_HALF), None)
+        if rec is None or (nxt := next((s['start'] for s in out if s['start'] > r), None)) is not None and rec >= nxt:
+            continue
+        ts = np.array([t for t in range(r, rec + 1) if t in track])
+        if not len(ts):
+            continue
+        ball = G[[idx[t] for t in ts]]
+        for g in range(r, rec + 1):
+            here = ts >= g
+            can = [k for k in range(P.shape[1]) if np.isfinite(P[g, k]).all() and np.any(
+                np.linalg.norm(P[g, k] * [L, W] - ball[here], axis=1)
+                <= ob.MAX_REACH_M + player_track.RUN_MS * (ts[here] - g) / 25)]
+            if len(can) == 1:
+                k = can[0]
+                st.update(released=r, restart=g, end=g - 1,
+                          restart_team=ob.keeper_team(P, g, k, sides) if k in keepers else team[k])
+                break
     json.dump(dict(stoppages=out, strikes=strikes), open(OUT_JSON, 'w'), indent=1)
     print(f'{len(out)} stoppages {dict(Counter(s["waits_for"] for s in out))}, ended by {dict(Counter(s["ended_by"] for s in out))} '
           f'| {len(strikes)} placed balls struck -> {OUT_JSON}')

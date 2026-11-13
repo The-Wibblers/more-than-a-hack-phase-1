@@ -171,16 +171,16 @@ export function Timeline() {
             ))}
           </Row>
         )}
-        {data.touchModelRuns && (
-          <Row label="Touch model" onClick={onClick} marker={pos(data.frame)} guides={guides}>
-            {data.touchModelRuns.map((r) => (
+        {data.oldRuleRuns && (
+          <Row label="Old rule" onClick={onClick} marker={pos(data.frame)} guides={guides}>
+            {data.oldRuleRuns.map((r) => (
               <Bar
                 key={r.start}
                 left={pos(r.start)}
                 width={pos(r.end + 1) - pos(r.start)}
                 colour={LABEL_COLOURS[r.value]}
                 text={r.value}
-                title={`touch model ${r.value} · frames ${r.start}–${r.end}`}
+                title={`old rule ${r.value} · frames ${r.start}–${r.end}`}
               />
             ))}
           </Row>

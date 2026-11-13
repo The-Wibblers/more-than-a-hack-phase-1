@@ -26,10 +26,10 @@ takes ~80 ms. Frames are extracted on demand, with no disk cache.
 | Top-down view: players by team with 1 s heading arrows, our ball and its trail, the assistant referees on their touchlines with their flag when it is up | the same, plus `flag_self.py` (via `viewer_export.py`) |
 | Period, match clock, graded or not | DATA.md frame boundaries |
 | Ground-truth possession, or "no label" outside the public window 11185–18684 | `evaluation/gt/` |
-| Our possession, with a ✓ / ✗ against the ground truth | `possession_touches.csv` (the rule) and `possession_touch_model.csv` (the touch model) |
+| Our possession, with a ✓ / ✗ against the ground truth | `possession_touch_model.csv` (the touch model, which we submit); the timeline also shows `possession_touches.csv` (the old control rule) |
 | The ball played: the last touch (player, team, body part) and what was played (dribble, ground pass, lofted ball; completed / lost) | `data/ballcv/BAR-ATH_touches.json` |
 | Touches within ±30 s: every touch, bounce and deflection, with interception / block / keeper-claim badges (click to jump) | same |
-| The ±30 s timeline: ground truth, our prediction, touch model, stoppages, set-piece tags, assistant flag, broadcast state, referee whistle, touches, ball motion (flight / roll), balls played | all of the above, `stoppages.py`, the Smart Tagging, `alignment/` |
+| The ±30 s timeline: ground truth, our prediction, old rule, stoppages, set-piece tags, assistant flag, broadcast state, referee whistle, touches, ball motion (flight / roll), balls played | all of the above, `stoppages.py`, the Smart Tagging, `alignment/` |
 | Players sorted by distance to the ball; the homography, its validity and reprojection error | tracks, homography |
 
 **Keys:** ← → one frame · Shift ±1 s · Option/Alt ±10 s. The frame box jumps to any frame, and the match bar jumps

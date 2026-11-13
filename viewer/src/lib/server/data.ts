@@ -49,16 +49,16 @@ export const PATHS = {
   broadcastAlignment: asset("broadcast", "_to_tactical.csv"),
   // written by alignment/detect_whistles.py
   whistles: asset("broadcast", "_whistles.csv"),
-  // written by possession/predict.py: our possession label for every frame (touch-based first, then nearest player)
+  // written by possession/touch_possession.py public (ballcv/run_match.py): the possession we submit
   prediction: [
-    path.join(REPO_ROOT, "evaluation", "results", "possession_touches.csv"),
+    path.join(REPO_ROOT, "evaluation", "results", "possession_touch_model.csv"),
   ],
+  // written by possession/predict.py: the control rule in live play, which the touch model replaced
+  oldRule: path.join(REPO_ROOT, "evaluation", "results", "possession_touches.csv"),
   // written by our own ball tracker (ownball.py events): pixel ball track, touches, balls played
   touches: path.join(DATA_DIR, "ballcv", "BAR-ATH_touches.json"),
   // written by ballcv/stoppages.py: each stoppage, the restart it waits for, and when that came
   stoppages: path.join(DATA_DIR, "ballcv", "BAR-ATH_stoppages.json"),
-  // written by possession/touch_possession.py public: the touch model's team in live play, predict.py's dead ball
-  touchModel: path.join(REPO_ROOT, "evaluation", "results", "possession_touch_model.csv"),
   // written by ballcv/viewer_export.py: the assistant model's referees at each flag sample
   assistants: path.join(DATA_DIR, "ballcv", "BAR-ATH_assistants.json"),
   // written by ballcv/viewer_export.py: where each assistant's flag is, and the flag model's raises
@@ -250,7 +250,7 @@ function loadGroundTruth(file: string): Uint8Array {
 }
 
 // Our predictions: same frame,label format. Re-read whenever a file changes, so rerunning
-// possession/predict.py shows up without restarting the viewer.
+// the possession shows up without restarting the viewer.
 const predictionCache = new Map<string, { mtimeMs: number; codes: Uint8Array }>();
 
 function loadPrediction(files: string[]): Uint8Array | null {
@@ -759,7 +759,7 @@ export function getFrame(frame: number): FrameData {
   const window = { start: Math.max(0, frame - WINDOW_FRAMES), end: Math.min(N_FRAMES - 1, frame + WINDOW_FRAMES) };
   const broadcast = bc ? broadcastAt(bc, frame, window) : null;
   const pred = loadPrediction(PATHS.prediction);
-  const touchModel = loadPrediction([PATHS.touchModel]);
+  const oldRule = loadPrediction([PATHS.oldRule]);
   const touchFile = loadTouches(PATHS.touches);
   const ballInUse = tacticalBallAt(atd, frame);
   const broadcastBall = broadcastBallAt(bc, frame);
@@ -842,6 +842,6 @@ export function getFrame(frame: number): FrameData {
     assistantFlags: flagFile ? flagFile.signals.filter((s) => s.end >= window.start && s.start <= window.end) : null,
     pred: pred ? LABEL_CODES[pred[frame]] : null,
     predRuns: pred ? runs(window.start, window.end, (f) => (pred[f] ? LABEL_CODES[pred[f]] : null)) : null,
-    touchModelRuns: touchModel ? runs(window.start, window.end, (f) => (touchModel[f] ? LABEL_CODES[touchModel[f]] : null)) : null,
+    oldRuleRuns: oldRule ? runs(window.start, window.end, (f) => (oldRule[f] ? LABEL_CODES[oldRule[f]] : null)) : null,
   };
 }
