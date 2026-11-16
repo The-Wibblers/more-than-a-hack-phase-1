@@ -386,6 +386,19 @@ def only_one_reaches(P, ts, ball, g0, g1):
     return None
 
 
+def kit_under(dets, f, at, mine):
+    """The other team where the picture sees, under a player Metrica alone places (no detection matched him:
+    player_track.py), an outfield kit not his team's (mine) and none of his -- within player_track.POS_M of him at
+    frame f. Metrica has its number on the wrong player there. -> 'H' | 'A', or None."""
+    import player_track
+    if f not in dets:
+        return None
+    Gd, kit = dets[f]
+    near = [int(kit[j]) for j in np.flatnonzero(np.linalg.norm(Gd - at, axis=1) <= player_track.POS_M)]
+    seen = {'HA'[k] for k in near if k in (0, 1)}
+    return None if mine in seen or len(seen) != 1 else seen.pop()
+
+
 def kit_at(dets, fr_g, G, f, sides, grass, ball=None):
     """A break nobody tracked is at: the player the tracking does not have (Metrica can keep a keeper in his box, or
     hold a player metres off) is still in the picture, in his team's kit (player_det.py) -- the nearest within
@@ -523,6 +536,7 @@ def cmd_events():
     from cameras import load_h
     M, _, _ = load_h('tactical'); t = np.load(S + 'tactical.npz'); P = t['P'][..., :2]
     z = np.load(PLAYER_TRACKS); P = z['P']   # Metrica's slots kept on the picture (player_track.py): its lost and hidden players back in place
+    src = z['src']                           # where each slot's place came from (1: Metrica alone, 2: the picture)
     print(f'players: player_track.py over {z["frames"][0]}-{z["frames"][1]}, Metrica elsewhere', flush=True)
     team = ['H'] * 24 + ['A'] * 22
     track = {int(k): np.array(v) for k, v in json.load(open(WORK + '/track.json')).items()}
@@ -580,7 +594,12 @@ def cmd_events():
         seen_at = None if touch or bounce_like else kit_at(dets, fr_g, G_g, f, sides, grass, b3)
         if touch:
             tm = keeper_team(P, f, touch[1], sides) if touch[1] in KEEPERS else team[touch[1]]
-            e.update(kind='touch', slot=touch[1] + 1, team=tm, dist_m=round(touch[0], 2), body=body_part(touch[2]))
+            other = None if touch[1] in KEEPERS or src[f, touch[1]] != 1 else kit_under(dets, f, P[f, touch[1]] * [L, W], tm)
+            if other:                                          # Metrica's number on a player the picture sees in the other kit
+                e.update(kind='touch', slot=None, lost=True, team=other, dist_m=round(touch[0], 2), body=body_part(touch[2]),
+                         how="Metrica's number on a player the picture sees in the other team's kit")
+            else:
+                e.update(kind='touch', slot=touch[1] + 1, team=tm, dist_m=round(touch[0], 2), body=body_part(touch[2]))
         elif seen_at:
             e.update(kind='touch', slot=None, lost=True, team=seen_at[0], dist_m=seen_at[1], body='foot',
                      how=('a keeper' if seen_at[2] else 'a player') + ' the tracking does not have, seen at the ball')

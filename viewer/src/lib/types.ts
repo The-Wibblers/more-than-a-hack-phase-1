@@ -40,14 +40,15 @@ export interface Stoppage {
   // stoppage whistle in the audio; a tagged set piece; players setting one up (one at a corner, or off the pitch over a
   // touchline) where nothing else says play stopped; or an assistant's flag, restarted before the next set piece's out
   // (an offside or a foul: a free kick)
-  cause: "whistle" | "tag" | "set-up" | "flag";
-  waits_for: "free kick" | "throw-in" | "goal kick" | "corner" | "kick-off" | "restart"; // restart: a lone flag's, not seen
-  restart: number | null; // the restart frame, or null when it was not seen (ended when the players resumed)
-  ended_by: "restart" | "players resume";
+  // a goal (tagged), until the kick-off; a half whose tracking starts before its kick-off; the broadcast's half-time break
+  cause: "whistle" | "tag" | "set-up" | "flag" | "goal" | "half start" | "half-time" | "exit"; // exit: over a touchline, untagged
+  waits_for: "free kick" | "throw-in" | "goal kick" | "corner" | "kick-off" | "half-time" | "restart"; // restart: a lone flag's, not seen
+  restart: number | null; // the restart frame, or null when it was not seen (ended when the players resumed, or the half ended)
+  ended_by: "restart" | "players resume" | "half-time";
   tag: number | null; // the set-piece tag's frame, or where the set-up was seen
   // what put the start where it is: the whistle; or, before a tag, the assistant's flag, the ball leaving the pitch,
   // or the fastest players easing off
-  timed_by: "whistle" | "assistant flag" | "ball exit" | "speed drop";
+  timed_by: "whistle" | "assistant flag" | "ball exit" | "speed drop" | "ball in the goal" | "before the kick-off" | "broadcast break" | "within";
   restart_team: Side | null; // who takes the set piece: named on the tag, else the player at the ball
 }
 

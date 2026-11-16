@@ -9,7 +9,7 @@ throw-in, a substitution, an injury seen to -- players leave the pitch only whil
 
 When it stopped: a half whose tracking starts before its kick-off, from its first frame; a goal (tagged), from the
 ball seen in the goal, else the players easing off over the goal's span, until the kick-off; the broadcast's half-time
-break, to the end of the half; the whistle; the flag; else, for a tagged or set-up restart, the first out before it (from OUT_S
+break, to the end of the half; the whistle; the flag; a ball out over a touchline nobody tagged (a throw-in); else, for a tagged or set-up restart, the first out before it (from OUT_S
 before to TAG_LEAD_S after): the assistant's flag, or our ball leaving the pitch (and staying off it) -- the ball when
 it crossed, the flag only follows it; not where the ball is seen flying with no arc found for it (ball3d.py: the
 ground point of a ball in the air can lie past the far touchline or a goal line over the pitch); a ball first seen out
@@ -71,10 +71,15 @@ def tagged_outs():
 
 
 def goal_spans():
-    """[(start, end)] of the tagged goals ('GOALS': from the move's start to just after the kick-off that follows)."""
+    """[(start, end, scoring team 'H' | 'A' | None)] of the tagged goals ('GOALS': from the move's start to just after
+    the kick-off that follows)."""
     import xml.etree.ElementTree as ET
-    return sorted((round(float(i.findtext('start')) * 25), round(float(i.findtext('end')) * 25))
-                  for i in ET.parse(TAGS).getroot().iter('instance') if i.findtext('code') == 'GOALS')
+    out = []
+    for i in ET.parse(TAGS).getroot().iter('instance'):
+        if i.findtext('code') == 'GOALS':
+            lab = {l.findtext('group'): l.findtext('text') for l in i.findall('label')}
+            out.append((round(float(i.findtext('start')) * 25), round(float(i.findtext('end')) * 25), TAG_TEAM.get(lab.get('Team'))))
+    return sorted(out)
 
 
 def half_kickoffs():
@@ -111,16 +116,21 @@ def setups(P, V, known, halves, kickoffs):
     return sorted(out)
 
 
-def out_moment(tag, after, fastest, flag_ups, exits, inside, last_break):
+LINE_OF = {'throw-in': 'touch', 'goal kick': 'goal', 'corner': 'goal'}   # the line the ball crossed for each restart
+
+
+def out_moment(tag, after, fastest, flag_ups, exits, inside, last_break, kind):
     """(frame, how) play stopped for a tagged (or set-up) restart, not before frame after: of the assistant's flags and
     the ball's (sure) exits seen from OUT_S before the tag to TAG_LEAD_S after it (a tag can come just before the out),
     the first -- after it the ball is dead, and moved about off the pitch; an exit is when the ball crossed, a flag only
-    follows it. exits: [(frame seen, frame it went out)]. An exit before that is the out too when the ball is not seen
+    follows it. exits: [(frame seen, frame it went out, the line it crossed)] -- over the restart's own line (LINE_OF:
+    a throw-in's touchline, a goal kick's or corner's goal line). An exit before that is the out too when the ball is not seen
     back on the pitch (inside: the frames it is) between it and then: it never came back. With neither, the ball was
     still in play at the last break in its motion we saw before the tag (last_break: a touch, bounce or deflection) --
     it went out after that; the players easing off (the largest drop in the fastest players' speed) only says when,
     between then and the tag."""
     lo, hi = max(after, tag - OUT_S * 25), tag + TAG_LEAD_S * 25
+    exits = [(f, d) for f, d, line in exits if LINE_OF.get(kind, line) == line]
     stayed = [(f, d) for f, d in exits if after <= f < lo and not ((inside > f) & (inside <= lo)).any()]
     lo = min([lo] + [f for f, _ in stayed])
     if lo > hi:
@@ -228,11 +238,13 @@ def cmd_build():
                 # it went out unseen, after it was last seen on the pitch -- when the players eased off
                 gone = i >= 2 and fr[i - 1] - fr[i - 2] >= ob.CLAIM_GAP_S * 25
                 last_in = fr[:i - 1][past[:i - 1] < 0]
-                exits.append((int(fr[i - 1]), eased_off(fastest, int(last_in[-1]), int(fr[i - 1])) if gone and len(last_in) else int(fr[i - 1])))
+                x, y = G[i - 1]
+                line = 'touch' if -min(y, W - y) >= -min(x, L - x) else 'goal'      # the line it is furthest past
+                exits.append((int(fr[i - 1]), eased_off(fastest, int(last_in[-1]), int(fr[i - 1])) if gone and len(last_in) else int(fr[i - 1]), line))
             was_in = False
     # a ball struck from where it was placed (strikes) is a restart, not an out, even where its ground point runs on
     # over a line (a corner, a throw-in): no exit within the strike's fit (FIT_HALF) after it
-    exits = [(f, d) for f, d in exits if not any(0 <= f - k <= ob.FIT_HALF for k in strikes)]
+    exits = [(f, d, line) for f, d, line in exits if not any(0 <= f - k <= ob.FIT_HALF for k in strikes)]
     inside = fr[past < 0]                                                     # the frames the ball is seen on the pitch
     seen_breaks = np.array(sorted(e['f'] for e in json.load(open(ob.OUT_JSON))['events']))
     last_break = lambda f: int(seen_breaks[np.searchsorted(seen_breaks, f) - 1]) if np.searchsorted(seen_breaks, f) else f
@@ -279,16 +291,16 @@ def cmd_build():
     # posts within the goal's span -- else from the players easing off over the span, until that kick-off; before
     # anything else in between (a review, the celebrations)
     goal_at = {}
-    for g0, g1 in goal_spans():
+    for g0, g1, scorer in goal_spans():
         ko = next((t for t, k, _tm in tags if k == 'kick-off' and g0 <= t <= g1), None)
         if ko is None:
             continue
         inn = [int(f) for f in fr[(fr >= g0) & (fr <= ko)] if past[idx[int(f)]] > predict.OUT_M
                and abs(G[idx[int(f)], 1] - W / 2) <= GOAL_W / 2 and min(G[idx[int(f)], 0], L - G[idx[int(f)], 0]) < 0]
         at, how = (inn[0], 'ball in the goal') if inn else (eased_off(fastest, g0, ko), 'speed drop')
-        goal_at[at] = (ko, how)
-    tags = [t for t in tags if not (t[1] == 'kick-off' and any(ko == t[0] for ko, _h in goal_at.values()))]
-    starts += [(at, 'goal', 'kick-off', None) for at in goal_at]
+        goal_at[at] = (ko, how, {'H': 'A', 'A': 'H'}.get(scorer))      # the other team kicks off
+    tags = [t for t in tags if not (t[1] == 'kick-off' and any(ko == t[0] for ko, *_ in goal_at.values()))]
+    starts += [(at, 'goal', 'kick-off', kicks) for at, (_ko, _how, kicks) in goal_at.items()]
     events = sorted([(w, 'whistle', 'free kick', None) for w in whistles] + [(t, 'tag', k, tm) for t, k, tm in tags]
                     + [(f, 'set-up', k, None) for f, k in found] + starts)
     out, prev_end = [], -1
@@ -301,16 +313,19 @@ def cmd_build():
             elif cause == 'goal':
                 s, how = anchor, goal_at[anchor][1]
             else:
-                s, how = out_moment(anchor, prev_end + 1, fastest, flag_ups, exits, inside, last_break(anchor))
+                s, how = out_moment(anchor, prev_end + 1, fastest, flag_ups, exits, inside, last_break(anchor), kind)
             if s <= prev_end and cause == 'goal' and out:
                 s = out.pop()['start']                                        # a goal takes the open stoppage on to its kick-off
             elif s <= prev_end:
                 break                                                         # part of the stoppage already open
             a, b = half_of(s)
-            rw = next((r for r in restart_whistles if r > s), None)           # the referee restarts play on it
             ko_tag = kickoff_tag[anchor][0] if cause == 'half start' else goal_at[anchor][0] if cause == 'goal' else anchor
+            # the referee restarts play on a whistle -- a kick-off on one at its tag (TAG_LEAD_S either side): the whistles
+            # before it, over the celebrations or a review, restart nothing
+            since = max(s, ko_tag - TAG_LEAD_S * 25) if kind == 'kick-off' else s
+            rw = next((r for r in restart_whistles if r > since), None)
             cap = ko_tag + TAG_LEAD_S * 25 if kind == 'kick-off' else s + predict.WHISTLE_CAP   # a kick-off: by its tag
-            limit = min(b, cap, next((w for w in whistles if w > s), b), rw + 25 * 3 if rw else b)
+            limit = min(b, cap, next((w for w in whistles if w > since), b), rw + 25 * 3 if rw else b)
             # the restart comes after the out: after the assistant lowers the flag, and not within PLACED_S
             earliest = max(s + int(PLACED_S * 25), flag_down.get(s, s) + 1 if how == 'assistant flag' else 0)
             if kind == 'kick-off':                                            # only the kick-off restarts it: not before
@@ -318,12 +333,34 @@ def cmd_build():
                 # running in the meantime are celebrating or warming up, not playing)
             restart = restart_of(kind, s, earliest, limit, rw); ended = 'restart'
             if restart is None:                                               # the players resume (they react just after)
-                restart, ended = max(earliest, resumed(s, limit) - RESUME_LAG), 'players resume'
+                # (a kick-off: from its tag -- before it, the players were celebrating, or warming up)
+                restart, ended = max(earliest, resumed(ko_tag if kind == 'kick-off' else s, limit) - RESUME_LAG), 'players resume'
             out.append(dict(start=int(s), end=int(restart - 1), cause=cause, waits_for='restart' if kind == 'any' else kind,
                             restart=int(restart), ended_by=ended, tag=None if cause == 'whistle' else anchor,
                             timed_by=how, tag_team=team))
             prev_end = restart - 1
             break
+    # a sure exit over a touchline that no stoppage covers is a throw-in nobody tagged -- where the players ease off
+    # after it (the fastest players' pace over DROP_S, as for a speed drop, falls by RESUME_RISE, the whistle rule's
+    # change of pace: the ball out, they stop; play going on, they do not): dead from it until the throw (restart_of:
+    # the held ball struck from a player on the touchline), else until the players resume
+    kd = DROP_S * 25
+    for f, d, line in exits:
+        if line != 'touch' or not half_of(d) or any(st['start'] <= d <= st['end'] for st in out):
+            continue
+        if not np.nanmean(fastest[max(0, d - kd):d]) - np.nanmean(fastest[d:d + kd]) >= predict.RESUME_RISE:
+            continue
+        a, b = half_of(d)
+        limit = min(b, d + predict.WHISTLE_CAP, next((st['start'] for st in out if st['start'] > d), b) - 1)
+        earliest = d + int(PLACED_S * 25)
+        if earliest > limit:
+            continue
+        restart = restart_of('throw-in', d, earliest, limit, None); ended = 'restart'
+        if restart is None:
+            restart, ended = max(earliest, resumed(d, limit) - RESUME_LAG), 'players resume'
+        out.append(dict(start=int(d), end=int(restart - 1), cause='exit', waits_for='throw-in', restart=int(restart),
+                        ended_by=ended, tag=None, timed_by='ball exit', tag_team=None))
+    out.sort(key=lambda st: st['start'])
     # a restart must put the ball in play: play stopping again within PLACED_S means it was the same stoppage
     joined = []
     for st in out:
@@ -373,7 +410,7 @@ def cmd_build():
                 st['restart_team'] = team[k]
     # a restart we saw played is dead until it is sure whose it is: from the first frame on which only one player could
     # still get to the ball before it is received (the next break in its motion, ownball's events) -- running at
-    # RUN_MS to within MAX_REACH_M of where the ball will be -- and that player's team has it. Sure only once it is
+    # RUN_MS to within MAX_REACH_M of where the ball will be (the team taking it keeps it). Sure only once it is
     # received (within the break's fit, FIT_HALF, before it) is not sure while it travels: a ball played into a
     # contest, in play from the strike
     breaks = sorted(e['f'] for e in json.load(open(ob.OUT_JSON))['events'] if e['kind'] in ('touch', 'deflection'))
@@ -390,7 +427,10 @@ def cmd_build():
         sure = ob.only_one_reaches(P, ts, G[[idx[t] for t in ts]], r, rec - ob.FIT_HALF - 1)
         if sure:
             g, k = sure
-            st.update(released=r, restart=g, end=g - 1, restart_team=ob.keeper_team(P, g, k, sides) if k in keepers else team[k])
+            # it says when, not whose: a set piece is played to a teammate, so the team taking it keeps the ball (an
+            # opponent who gets to it takes it with his touch); only where nobody says who took it, the receiver's
+            st.update(released=r, restart=g, end=g - 1,
+                      restart_team=st['restart_team'] or (ob.keeper_team(P, g, k, sides) if k in keepers else team[k]))
     json.dump(dict(stoppages=out, strikes=strikes), open(OUT_JSON, 'w'), indent=1)
     print(f'{len(out)} stoppages {dict(Counter(s["waits_for"] for s in out))}, ended by {dict(Counter(s["ended_by"] for s in out))} '
           f'| {len(strikes)} placed balls struck -> {OUT_JSON}')

@@ -97,7 +97,17 @@ export function MatchBar() {
 }
 
 // What put a stoppage's start where it is.
-const TIMED_BY_TEXT = { whistle: "whistle", "assistant flag": "flag", "ball exit": "ball out", "speed drop": "players ease off" } as const;
+const TIMED_BY_TEXT = {
+  whistle: "whistle",
+  "assistant flag": "flag",
+  "ball exit": "ball out",
+  "speed drop": "players ease off",
+  "ball in the goal": "ball in the goal",
+  "before the kick-off": "half start",
+  "broadcast break": "broadcast break",
+  within: "the stoppage before",
+} as const;
+const CAUSE_TEXT: Partial<Record<string, string>> = { "set-up": "set-up: ", flag: "flag: ", goal: "goal → ", exit: "untagged " };
 const FLAG_COLOUR = "#facc15";
 
 // Our ball's path between breaks: flight (falls at ~gravity in the image), rolling, or neither clearly.
@@ -194,7 +204,7 @@ export function Timeline() {
                 left={pos(s.start)}
                 width={pos(s.end + 1) - pos(s.start)}
                 colour={LABEL_COLOURS.D}
-                text={`${s.cause === "set-up" ? "set-up: " : s.cause === "flag" ? "flag: " : ""}${s.waits_for}${s.restart_team ? ` (${s.restart_team})` : ""} · from ${TIMED_BY_TEXT[s.timed_by]}`}
+                text={`${CAUSE_TEXT[s.cause] ?? ""}${s.waits_for}${s.restart_team ? ` (${s.restart_team})` : ""} · from ${TIMED_BY_TEXT[s.timed_by] ?? s.timed_by}`}
                 title={`${
                   s.cause === "tag"
                     ? `tagged ${s.waits_for} (tag at frame ${s.tag})`
@@ -202,11 +212,19 @@ export function Timeline() {
                       ? `untagged ${s.waits_for}: a player ${s.waits_for === "corner" ? "at a corner" : "off the pitch over a touchline"} at frame ${s.tag}`
                       : s.cause === "flag"
                         ? `assistant's flag up (${s.waits_for === "restart" ? "its restart not seen" : `restarted by a ${s.waits_for}`})`
-                        : `whistle → ${s.waits_for}`
+                        : s.cause === "goal"
+                          ? "a goal (tagged): dead until the kick-off"
+                          : s.cause === "half start"
+                            ? "the half's tracking starts before its kick-off"
+                            : s.cause === "half-time"
+                              ? "half-time: the broadcast's break, to the end of the half"
+                              : s.cause === "exit"
+                                ? "the ball out over a touchline, nobody tagged it, and the players eased off: a throw-in"
+                                : `whistle → ${s.waits_for}`
                 }${
                   s.restart_team ? `, taken by ${s.restart_team}` : ""
                 }; dead from frame ${s.start}, timed by ${s.timed_by}; ${
-                  s.restart ? `restarts at frame ${s.restart}` : "restart not seen: ends when the players resume"
+                  s.restart ? `restarts at frame ${s.restart}` : s.ended_by === "half-time" ? "the half ends" : "restart not seen: ends when the players resume"
                 } (frame ${s.end + 1})`}
                 dim={s.ended_by !== "restart"}
               />
