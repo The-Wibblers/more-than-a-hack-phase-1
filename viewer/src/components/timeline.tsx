@@ -112,7 +112,7 @@ export function Timeline() {
   const pos = (f: number) => ((Math.max(start, Math.min(end + 1, f)) - start) / span) * 100;
   const whistles = (data.whistles ?? []).filter((w) => w.start >= start && w.start <= end);
   const guides = whistles.map((w) => pos(w.start));
-  const setPieces = data.tagsWindow.filter((t) => t.code === "SET PIECES");
+  const setPieces = data.tagsWindow.filter((t) => t.code === "SET PIECES" || t.code === "GOALS");
 
   const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -230,8 +230,8 @@ export function Timeline() {
               ))}
           </Row>
         )}
-        <Row label="Set-piece tags" onClick={onClick} marker={pos(data.frame)} guides={guides}>
-          {setPieces.length === 0 && <span className="absolute inset-0 flex items-center pl-2 text-zinc-600">no set piece tagged in this window</span>}
+        <Row label="Set-piece & goal tags" onClick={onClick} marker={pos(data.frame)} guides={guides}>
+          {setPieces.length === 0 && <span className="absolute inset-0 flex items-center pl-2 text-zinc-600">no set piece or goal tagged in this window</span>}
           {setPieces.map((t) => {
             const left = pos(t.start);
             return (
@@ -240,13 +240,17 @@ export function Timeline() {
                 type="button"
                 className={`absolute inset-y-0 whitespace-nowrap rounded-sm px-1 text-[10px] font-semibold text-white hover:brightness-125 ${left > 80 ? "-translate-x-full" : ""}`}
                 style={{ left: `${left}%`, background: t.team ? TEAM_COLOURS[t.team] : "#52525b" }}
-                title={`tagged ${t.labels.Type ?? t.code}${t.teamName ? ` · ${t.teamName}` : ""} · frames ${t.start}–${t.end} (the tag marks the set piece's clip, not the moment play stopped)`}
+                title={
+                  t.code === "GOALS"
+                    ? `tagged goal${t.teamName ? ` · ${t.teamName}` : ""} · frames ${t.start}–${t.end} (from the move's start to the kick-off after it)`
+                    : `tagged ${t.labels.Type ?? t.code}${t.teamName ? ` · ${t.teamName}` : ""} · frames ${t.start}–${t.end} (the tag marks the set piece's clip, not the moment play stopped)`
+                }
                 onClick={(e) => {
                   e.stopPropagation();
                   go(t.start);
                 }}
               >
-                {(t.labels.Type ?? t.code).replace(" Kick", "").replace(" (After Goal)", "").replace(" (Start)", "")}
+                {t.code === "GOALS" ? "Goal" : (t.labels.Type ?? t.code).replace(" Kick", "").replace(" (After Goal)", "").replace(" (Start)", "")}
               </button>
             );
           })}

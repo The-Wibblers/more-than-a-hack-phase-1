@@ -302,7 +302,9 @@ def cmd_build():
                 s, how = anchor, goal_at[anchor][1]
             else:
                 s, how = out_moment(anchor, prev_end + 1, fastest, flag_ups, exits, inside, last_break(anchor))
-            if s <= prev_end:
+            if s <= prev_end and cause == 'goal' and out:
+                s = out.pop()['start']                                        # a goal takes the open stoppage on to its kick-off
+            elif s <= prev_end:
                 break                                                         # part of the stoppage already open
             a, b = half_of(s)
             rw = next((r for r in restart_whistles if r > s), None)           # the referee restarts play on it
