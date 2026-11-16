@@ -106,8 +106,12 @@ const TIMED_BY_TEXT = {
   "before the kick-off": "half start",
   "broadcast break": "broadcast break",
   within: "the stoppage before",
+  "referee pip": "referee's pip",
+  "players stopped": "players stop running",
 } as const;
-const CAUSE_TEXT: Partial<Record<string, string>> = { "set-up": "set-up: ", flag: "flag: ", goal: "goal → ", exit: "untagged " };
+const CAUSE_TEXT: Partial<Record<string, string>> = {
+  "set-up": "set-up: ", flag: "flag: ", goal: "goal → ", exit: "untagged ", replay: "replays: ", "restart whistle": "restart whistle: ",
+};
 const FLAG_COLOUR = "#facc15";
 
 // Our ball's path between breaks: flight (falls at ~gravity in the image), rolling, or neither clearly.

@@ -248,7 +248,7 @@ def cmd_check():
     # against Metrica's ball, in flight: is our corrected place closer than the plain ground point?
     sys.path[:0] = [__import__('os').path.join(__import__('paths').REPO, 'possession'), __import__('paths').REPO]
     import predict
-    metrica = predict.match_state()[1] * [L, W]
+    metrica = predict.match_atd()[0] * [L, W]
     H = np.load(refine_h.OUT); track = {int(k): v for k, v in json.load(open(FULL + '/track.json')).items()}
     fs = np.array([f for f in np.flatnonzero(kind == 1) if np.isfinite(metrica[f]).all() and f in track])
     g, _ = rays(H, track, fs)

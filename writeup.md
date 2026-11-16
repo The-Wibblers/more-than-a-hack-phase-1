@@ -29,7 +29,7 @@ in it. Every network is small, defined in `ballcv/`, and trained here from scrat
 | Asset | How we use it |
 |---|---|
 | Tactical video | Everything we detect: the ball, the players and their kits, the assistant referees and their flags |
-| Tactical tracking (ATD) | Players: a seed for our detectors, and identities for our tracker. The ATD ball seeds the ball detector, flags balls flying over a player, and gives the nearest-player fallback where no touch has happened yet. It never places a touch |
+| Tactical tracking (ATD) | Players: a seed for our detectors, and identities for our tracker. The ATD ball seeds the ball detector and flags balls flying over a player. It never places a touch |
 | Tactical homography | Refined against the painted lines and mowing stripes (`refine_h.py`), then used everywhere |
 | Smart Tagging | The set-piece tags: which restart a stoppage waits for, and who takes it |
 | Broadcast video | Put on the tactical clock by aligning the two feeds. Its **audio** gives the referee's whistle; its **picture**, a second view of the ball, settles touches the tactical camera cannot see in depth (section 4). Live frames only |

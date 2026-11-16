@@ -1,6 +1,6 @@
 """Find the referee's whistle in the broadcast audio, and put each one on the tactical timeline.
 
-    python alignment/detect_whistles.py     # writes data/broadcast/BAR-ATH_broadcast_whistles.csv
+    python alignment/detect_whistles.py     # writes data/broadcast/BAR-ATH_broadcast_whistles.csv (and _whistle_pips.csv)
 
 Needs data/broadcast/BAR-ATH_broadcast_to_tactical.csv, so run alignment/align_broadcast.py first.
 
@@ -92,6 +92,7 @@ SPEED_AFTER_S = (2, 6)  # skips the first 2 s, while players are still reacting
 ROLE_DELTA = 0.3  # m/s
 
 OUT_NAME = "BAR-ATH_broadcast_whistles.csv"
+PIPS_NAME = "BAR-ATH_broadcast_whistle_pips.csv"
 
 
 def load_audio(video):
@@ -133,8 +134,9 @@ def whistle_score(audio):
 
 
 def find_whistles(t, score, pitch):
-    """(start_s, end_s, peak score, median pitch) of each whistle: runs of whistle-like sound held for MIN_DURATION_S,
-    and of those, the referee's. He blows the same whistle all match, while the crowd's whistles scatter over the band:
+    """-> (whistles, pips), each [(start_s, end_s, peak score, median pitch)]. Whistles: runs of whistle-like sound held
+    for MIN_DURATION_S, and of those, the referee's. Pips: his too, but shorter -- alone a pip may be anything; where
+    something else says play stopped (ballcv/stoppages.py), it is his whistle, and says when. He blows the same whistle all match, while the crowd's whistles scatter over the band:
     his two tones are the two pitches the match's whistle sound holds most often (each counting the columns within the
     prominence width of it; the second at least SECOND_TONE_HZ from the first), and a run is his when most of its
     columns sit on one of them."""
@@ -147,6 +149,7 @@ def find_whistles(t, score, pitch):
             merged.append([s, e])
     hop = HOP / SAMPLE_RATE                                      # a run of columns lasts to the end of its last one
     runs = [(s, e) for s, e in merged if t[e] - t[s] + hop >= MIN_DURATION_S]
+    short = [(s, e) for s, e in merged if t[e] - t[s] + hop < MIN_DURATION_S]
     held = lambda s, e: pitch[s:e + 1][score[s:e + 1] >= SCORE_MIN]
     width = PROMINENCE_BINS // 2 * SAMPLE_RATE / NPERSEG
     heard = np.concatenate([held(s, e) for s, e in runs])
@@ -157,7 +160,8 @@ def find_whistles(t, score, pitch):
     tones = np.array([first, grid[far][np.argmax(support[far])]])
     print("the referee's tones: {:.0f} Hz and {:.0f} Hz".format(*tones))
     his = lambda s, e: np.mean(np.min(np.abs(held(s, e)[:, None] - tones[None]), axis=1) <= width) > 0.5
-    return [(t[s], t[e], float(score[s:e + 1].max()), float(np.median(pitch[s:e + 1]))) for s, e in runs if his(s, e)]
+    found = lambda rs: [(t[s], t[e], float(score[s:e + 1].max()), float(np.median(pitch[s:e + 1]))) for s, e in rs if his(s, e)]
+    return found(runs), found(short)
 
 
 def player_speed(atd_raw):
@@ -219,7 +223,7 @@ def main():
     print("decoding broadcast audio...")
     audio = load_audio(video)
     print("scoring {:.0f} s of audio...".format(len(audio) / SAMPLE_RATE))
-    whistles = find_whistles(*whistle_score(audio))
+    whistles, pips = find_whistles(*whistle_score(audio))
     print("loading tactical player speeds...")
     speed = player_speed(atd_raw)
 
@@ -244,6 +248,13 @@ def main():
     out = pd.DataFrame(rows)
     out_path = os.path.join(out_dir, OUT_NAME)
     out.to_csv(out_path, index=False)
+    pip_rows = []
+    for start, _end, peak, hz in pips:
+        b0 = min(int(round(start * fps)), len(alignment) - 1)
+        pip_rows.append({"start_s": round(start, 2), "broadcast_frame": b0, "tactical_frame": int(to_tactical[b0]),
+                         "kind": kinds[b0], "score": round(peak, 1), "peak_hz": int(round(hz))})
+    pd.DataFrame(pip_rows).to_csv(os.path.join(out_dir, PIPS_NAME), index=False)
+    print("referee's pips (shorter than a whistle): {} -> {}".format(len(pip_rows), PIPS_NAME))
 
     print("\nwhistles: {}".format(len(out)))
     print(pd.crosstab(out["role"], out["kind"]).to_string())
