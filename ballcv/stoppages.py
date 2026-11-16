@@ -11,7 +11,8 @@ When it stopped: a half whose tracking starts before its kick-off, from its firs
 than OUT_S before it (RUN_MS: live play has someone running), when the players stopped -- the referee's pip then (a
 whistle too short to stand alone), else their pace dropping -- and with nothing else found there, such a stretch is a
 stoppage where the broadcast was away on replays for longer than OUT_S inside it or the referee's restart whistle
-ends it; a goal (tagged), from the
+ends it; where the players' pace times it and the broadcast had cut away from live play on the pitch (a close-up,
+then replays) and stayed away until then, their pace dropping in the OUT_S before the cut; a goal (tagged), from the
 ball seen in the goal, else the players easing off over the goal's span, until the kick-off; the broadcast's half-time
 break, to the end of the half; the whistle; the flag; a ball out over a touchline nobody tagged (a throw-in); else, for a tagged or set-up restart, the first out before it (from OUT_S
 before to TAG_LEAD_S after): the assistant's flag, or our ball leaving the pitch (and staying off it) -- the ball when
@@ -310,7 +311,7 @@ def cmd_build():
     kickoffs = [a for _h, a, _b in halves] + [t for t, k, _ in tags if k == 'kick-off']
     found = setups(tac[..., :2] * [L, W], spd, [t for t, _, _ in tags] + whistles, [(a, b) for _h, a, b in halves], kickoffs)
     print(f'{len(found)} restart set-ups where nothing else says play stopped: {dict(Counter(k for _, k in found))}')
-    def restart_of(kind, s, earliest, limit, rw):
+    def restart_of(kind, s, earliest, limit, rw, back=None):
         """the restart we can see: a goal kick or a corner, the placed ball struck in its goal area or at its corner arc;
         a throw-in, the held ball struck from the body of a player on a touchline (within MARGIN_M: the thrower; held
         overhead, its ground point lies metres inside the line); a stoppage whistle's free kick, on the referee's restart
@@ -327,8 +328,9 @@ def cmd_build():
                             return f
             # the ball not seen held: the first time it is seen at a touchline (within MARGIN_M of it) and on its way in
             # at BREAK_MS or more, with a player on the line within reach of it -- the thrower; before the players
-            # resume (resumed: the throw is what restarts play, and they react to it)
-            upto = min(limit, resumed(s, limit))
+            # resume (resumed: the throw is what restarts play, and they react to it) -- or, given, by the ball back in
+            # play (back)
+            upto = min(limit, back if back is not None else resumed(s, limit))
             for i in range(int(np.searchsorted(fr, earliest)), int(np.searchsorted(fr, upto, 'right'))):
                 inside_by = lambda j: min(G[j, 1], W - G[j, 1])
                 j = min(len(fr) - 1, i + ob.FIT_HALF)
@@ -415,7 +417,9 @@ def cmd_build():
                     out.append(first); prev_end = first['restart'] - 1           # no other evidence: the first timing stands
                     break
                 if s <= prev_end and cause == 'goal' and out:
-                    s, how = (lambda o: (o['start'], o['timed_by']))(out.pop())   # a goal takes the open stoppage on to its kick-off
+                    o = out.pop()                                             # a goal takes the open stoppage on to its kick-off
+                    evidence = [[o['timed_by'], o['start']], [how, s]]
+                    s, how = o['start'], o['timed_by']
                 elif s <= prev_end:
                     break                                                         # part of the stoppage already open
                 a, b = half_of(s)
@@ -453,6 +457,8 @@ def cmd_build():
                 entry = dict(start=int(s), end=int(restart - 1), cause=cause, waits_for='restart' if kind == 'any' else kind,
                              restart=int(restart), ended_by=ended, tag=None if cause == 'whistle' else anchor, timed_by=how,
                              tag_team=team)
+                if cause == 'goal' and how != goal_at[anchor][1]:
+                    entry['evidence'] = evidence                              # the open stoppage's, then the goal's
                 if ended == 'players resume' and cause in ('tag', 'set-up') and not paused(s, restart):
                     # the players never paused: the ball cannot be dead and at once live again -- that was not the out;
                     # the next evidence after it is
@@ -476,20 +482,28 @@ def cmd_build():
 
     # a sure exit over a touchline that no stoppage covers is a throw-in nobody tagged -- where the players ease off
     # after it (the fastest players' pace over DROP_S, as for a speed drop, falls by RESUME_RISE, the whistle rule's
-    # change of pace: the ball out, they stop; play going on, they do not): dead from it until the throw (restart_of:
-    # the held ball struck from a player on the touchline), else until the players resume
+    # change of pace: the ball out, they stop; play going on, they do not), or where we see the throw that brings it
+    # back (a quick throw: they do not stop): dead from it until the throw (restart_of: the held ball struck from a
+    # player on the touchline), else until the players resume
     kd = DROP_S * 25
     for f, d, line in exits:
         if line != 'touch' or not half_of(d) or any(st['start'] <= d <= st['end'] for st in out):
             continue
-        if not np.nanmean(fastest[max(0, d - kd):d]) - np.nanmean(fastest[d:d + kd]) >= predict.RESUME_RISE:
-            continue
+        eased = np.nanmean(fastest[max(0, d - kd):d]) - np.nanmean(fastest[d:d + kd]) >= predict.RESUME_RISE
         a, b = half_of(d)
         limit = min(b, d + predict.WHISTLE_CAP, next((st['start'] for st in out if st['start'] > d), b) - 1)
         earliest = d + int(PLACED_S * 25)
         if earliest > limit:
             continue
         restart = restart_of('throw-in', d, earliest, limit, None); ended = 'restart'
+        if not eased:
+            # a quick throw: the one that brings the ball back -- before it is seen in play, more than MARGIN_M inside
+            # the touchline (on the line it is being held, or bounced by the thrower)
+            back = next((int(fr[k]) for k in range(int(np.searchsorted(fr, f)) + 1, len(fr))
+                         if past[k] < 0 and min(G[k, 1], W - G[k, 1]) > MARGIN_M), limit)
+            restart = restart_of('throw-in', d, earliest, min(limit, back + ob.FIT_HALF), None, back=back + ob.FIT_HALF)
+            if restart is None:
+                continue
         if restart is None:
             restart, ended = max(earliest, resumed(d, limit) - RESUME_LAG), 'players resume'
             placed = placed_after(restart, limit)
@@ -507,6 +521,10 @@ def cmd_build():
     dead = np.zeros(len(pace), bool)
     for st in out:
         dead[st['start']:st['end'] + 1] = True
+    # the evidence that there was a stoppage at all, first in its 'evidence': [what, frame] in the order used -- what
+    # says play stopped, what narrows when, what picks the frame
+    found_by = lambda st: ({'tag': [st['waits_for'] + ' tag', st['tag']], 'set-up': ['set-up', st['tag']],
+                            'whistle': ['whistle', st['start']]}.get(st['cause']) or [st['timed_by'], st['start']])
     for _h, a, b in halves:
         f = a
         while f <= b:
@@ -523,7 +541,8 @@ def cmd_build():
                 s, how = (pip, 'referee pip') if pip is not None else (s, how)
                 ends = next((st for st in out if st['start'] == g), None)
                 if ends and ends['cause'] not in ('goal', 'half start'):
-                    ends.update(start=int(s), timed_by=how)
+                    ends.update(start=int(s), timed_by=how,
+                                evidence=[found_by(ends), ['nobody running', int(f)], [how, int(s)]])
                 else:
                     rw = next((r for r in restart_whistles if g - kd <= r <= g + kd), None)
                     replayed = any(f <= t0 < g for t0 in replay_end)
@@ -532,9 +551,30 @@ def cmd_build():
                                    else max((k for k in strikes if g - kd <= k <= g + kd), default=g))
                         out.append(dict(start=int(s), end=int(restart - 1), cause='replay' if replayed else 'restart whistle',
                                         waits_for='restart', restart=int(restart), tag=None, timed_by=how, tag_team=None,
-                                        ended_by='players resume' if rw is None and restart == g else 'restart'))
+                                        ended_by='players resume' if rw is None and restart == g else 'restart',
+                                        evidence=[['nobody running', int(f)],
+                                                  ['replays', int(next(t0 for t0 in replay_end if f <= t0 < g))] if replayed
+                                                  else ['restart whistle', int(rw)], [how, int(s)]]))
             f = g
     out.sort(key=lambda st: st['start'])
+    # the broadcast cut away from live play on the pitch (a close-up, then replays) and stayed away until a stoppage the
+    # players' pace times: play had stopped by the cut -- when, their pace dropping in the OUT_S before it. A cut-away
+    # going on from the stoppage before (replays of the last chance while play goes on) says nothing
+    away = np.zeros(len(pace), bool)
+    for row in rows:
+        if row['tactical_frame'] and 0 <= int(float(row['tactical_frame'])) < len(away):
+            away[int(float(row['tactical_frame']))] = row['kind'] != 'live' or row['pitch_view'] == '0'
+    for k, st in enumerate(out):
+        prev = out[k - 1]['end'] + 1 if k else (half_of(st['start']) or (0, 0))[0]
+        if st['timed_by'] not in ('players stopped', 'speed drop') or not away[st['start']]:
+            continue
+        cut = st['start']
+        while cut > prev and away[cut - 1]:
+            cut -= 1
+        if prev < cut < st['start']:
+            s = int(eased_off(fastest, max(prev, cut - OUT_S * 25), cut))
+            st.update(start=s, timed_by='broadcast cut', evidence=st.get('evidence', [found_by(st)])[:1]
+                      + [['broadcast cut', int(cut)], ['speed drop', s]])
     # play is the players running (RUN_MS): if, before anyone runs after their 'resume', they fall below the stoppage's own
     # lull (the fastest players' pace over DROP_S, as for a speed drop), the ball was still dead -- the restart is the
     # one they then run from: a placed ball struck as they set off, else their pace rising out of that deeper lull
@@ -564,7 +604,9 @@ def cmd_build():
     for st in out:
         if joined and st['cause'] != 'goal' and (st['start'] - joined[-1]['end'] - 1 < PLACED_S * 25
                        or not ran(joined[-1]['end'] + 1, st['start'])):
-            joined[-1] = dict(st, **{k: joined[-1][k] for k in ('start', 'cause', 'timed_by')})   # stopped as the first
+            first = joined[-1]                                                # stopped as the first, and why
+            joined[-1] = dict({k: v for k, v in st.items() if k != 'evidence'},
+                              **{k: first[k] for k in ('start', 'cause', 'timed_by', 'evidence') if k in first})
         else:
             joined.append(st)
     out = joined

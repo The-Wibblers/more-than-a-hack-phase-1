@@ -1,7 +1,7 @@
 "use client";
 
 import { BROADCAST_STATUS, FPS, LABEL_COLOURS, N_FRAMES, PERIODS, PUBLIC_GT, TEAM_COLOURS, matchClock, periodOf } from "@/lib/match";
-import { touchSlot, type Whistle } from "@/lib/types";
+import { touchSlot, type Stoppage, type Whistle } from "@/lib/types";
 
 import { useViewer } from "./viewer-context";
 
@@ -108,7 +108,25 @@ const TIMED_BY_TEXT = {
   within: "the stoppage before",
   "referee pip": "referee's pip",
   "players stopped": "players stop running",
+  "broadcast cut": "players stop (broadcast cuts away)",
 } as const;
+// The pieces of evidence in a stoppage's chain (ballcv/stoppages.py 'evidence').
+const EVIDENCE_TEXT: Partial<Record<string, string>> = {
+  ...TIMED_BY_TEXT,
+  "speed drop": "players' pace drops",
+  "players stopped": "players' pace drops",
+  "broadcast cut": "broadcast cuts away",
+  "nobody running": "nobody runs",
+  replays: "replays",
+  "restart whistle": "restart whistle",
+  "set-up": "set-up seen",
+};
+const evidenceText = (what: string) => EVIDENCE_TEXT[what] ?? what;
+// "from A → B → C", the evidence in the order it was used; with frames for the tooltip
+const timedText = (s: Stoppage, frames: boolean) =>
+  s.evidence
+    ? s.evidence.map(([what, f]) => `${evidenceText(what)}${frames ? ` ${f}` : ""}`).join(" → ")
+    : `${TIMED_BY_TEXT[s.timed_by as keyof typeof TIMED_BY_TEXT] ?? s.timed_by}${frames ? ` ${s.start}` : ""}`;
 const CAUSE_TEXT: Partial<Record<string, string>> = {
   "set-up": "set-up: ", flag: "flag: ", goal: "goal → ", exit: "untagged ", replay: "replays: ", "restart whistle": "restart whistle: ",
 };
@@ -208,7 +226,7 @@ export function Timeline() {
                 left={pos(s.start)}
                 width={pos(s.end + 1) - pos(s.start)}
                 colour={LABEL_COLOURS.D}
-                text={`${CAUSE_TEXT[s.cause] ?? ""}${s.waits_for}${s.restart_team ? ` (${s.restart_team})` : ""} · from ${TIMED_BY_TEXT[s.timed_by] ?? s.timed_by}`}
+                text={`${CAUSE_TEXT[s.cause] ?? ""}${s.waits_for}${s.restart_team ? ` (${s.restart_team})` : ""} · from ${timedText(s, false)}`}
                 title={`${
                   s.cause === "tag"
                     ? `tagged ${s.waits_for} (tag at frame ${s.tag})`
@@ -227,7 +245,7 @@ export function Timeline() {
                                 : `whistle → ${s.waits_for}`
                 }${
                   s.restart_team ? `, taken by ${s.restart_team}` : ""
-                }; dead from frame ${s.start}, timed by ${s.timed_by}; ${
+                }; dead from frame ${s.start}, from ${timedText(s, true)}; ${
                   s.restart ? `restarts at frame ${s.restart}` : s.ended_by === "half-time" ? "the half ends" : "restart not seen: ends when the players resume"
                 } (frame ${s.end + 1})`}
                 dim={s.ended_by !== "restart"}

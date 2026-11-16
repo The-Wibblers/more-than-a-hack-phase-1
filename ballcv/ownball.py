@@ -337,12 +337,16 @@ def placed_before(M, track, f):
     return bool(np.max(np.linalg.norm(G - np.median(G, 0), axis=1)) < CONTACT_M)
 
 
-def control_roles(touches, events):
+def control_roles(touches, events, with_ball=()):
     """Possession: a team has the ball until the other team takes it. The other team takes it when one of its players
     touches it and
       the ball reached him loose -- since the previous touch something else happened to it (a bounce, a deflection
-      off nobody): nobody had it, so whoever plays it has it; or
-      it came straight off the other team's play, and his team's next touch is theirs again (or no touch follows).
+      off nobody): nobody had it, so whoever plays it has it -- but not in a duel (a player of the team with the ball
+      within MAX_REACH_M of it too: who touched it is in doubt, and the other team's touch there is as likely a block);
+      or
+      it came straight off the other team's play, and his team's next play on the ball is theirs again -- its next
+      touch, or a stretch on the ball (with_ball: nobody of the other team in reach), whichever comes first (or none
+      follows).
     Otherwise it was only contact with the other team's play: a poke, a ricochet, a block. A keeper claim takes it at
     once. Sets e['role'] on every touch (control, interception, block, keeper claim) and returns the possession
     changes [{f, team, via}], dated at the touch that took it."""
@@ -352,8 +356,12 @@ def control_roles(touches, events):
         if e['team'] == current:
             e['role'] = 'keeper claim' if e.get('claim') else 'control'; continue
         nxt = touches[i + 1] if i + 1 < len(touches) else None
+        held = next((r for r in with_ball if r['f0'] > e['f']), None)        # his team's next play: a touch or on the ball
+        if held is not None and (nxt is None or held['f0'] < nxt['f']):
+            nxt = held
         prev = touches[i - 1]['f'] if i else None
         loose = prev is not None and bisect.bisect_right(others, prev) < bisect.bisect_left(others, e['f'])
+        loose = loose and not e.get('rival_m', np.inf) <= MAX_REACH_M      # a duel: the benefit of the doubt to the team with it
         if current is None or e.get('claim') or loose or nxt is None or nxt['team'] == e['team']:
             e['role'] = 'keeper claim' if e.get('claim') else 'control' if current is None else 'interception'
             changes.append(dict(f=e['f'], team=e['team'], via='start' if current is None else e['role']))
@@ -600,6 +608,11 @@ def cmd_events():
                          how="Metrica's number on a player the picture sees in the other team's kit")
             else:
                 e.update(kind='touch', slot=touch[1] + 1, team=tm, dist_m=round(touch[0], 2), body=body_part(touch[2]))
+                # the nearest player of the other team: within reach too, it was a duel
+                rival = next((dist for dist, sidx, *_ in near_c
+                              if (keeper_team(P, f, sidx, sides) if sidx in KEEPERS else team[sidx]) != tm), None)
+                if rival is not None:
+                    e['rival_m'] = round(float(rival), 2)
         elif seen_at:
             e.update(kind='touch', slot=None, lost=True, team=seen_at[0], dist_m=seen_at[1], body='foot',
                      how=('a keeper' if seen_at[2] else 'a player') + ' the tracking does not have, seen at the ball')
@@ -633,9 +646,6 @@ def cmd_events():
     # whistle (the ball still moves about) are not play
     sys.path.insert(0, __import__('paths').REPO)
     from games import GAME, half_video_blocks
-    possession = []
-    for _half, h0, h1 in half_video_blocks(GAME):
-        possession += control_roles([e for e in touches if h0 <= e['f'] <= h1], [e for e in merged if h0 <= e['f'] <= h1])
     # 4. who the ball is with. A player can have the ball for seconds with touches too gentle to break its motion, or
     # take it while we cannot see it: on the ball (on_ball), cut at another player's touch, and only from when no
     # opponent can still play it (none within MAX_REACH_M of it on the ground): until then it is a tackle or a duel,
@@ -654,8 +664,16 @@ def cmd_events():
         opp = [j for j in range(P.shape[1]) if side_of(a, j) != mine]
         a = next((f for f in range(a, b + 1) if f in gi and not np.any(
             np.linalg.norm(P[f, opp] * [L, W] - G[gi[f]], axis=1) <= MAX_REACH_M)), b + 1)
+        # ... and from where the broadcast camera, where it sees, does not put the ball elsewhere (in the tactical
+        # picture a ball in the air in front of or behind him lies on him)
+        a = next((f for f in range(a, b + 1) if f not in track
+                  or at_player(P, track, f, track[f][:2], k, MAX_REACH_M, 0, 0)[0] is not False), b + 1)
         if b - a + 1 >= PLACED_S * 25:
             with_ball.append(dict(f0=a, f1=b, slot=k + 1, team=mine))
+    possession = []
+    for _half, h0, h1 in half_video_blocks(GAME):
+        possession += control_roles([e for e in touches if h0 <= e['f'] <= h1], [e for e in merged if h0 <= e['f'] <= h1],
+                                    [r for r in with_ball if h0 <= r['f0'] <= h1])
     for c in possession:
         if c['f'] not in tf:
             continue
