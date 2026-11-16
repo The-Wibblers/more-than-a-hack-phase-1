@@ -161,7 +161,7 @@ export interface TouchEvent {
 /** A touch's player: "#slot", or "untracked" for a player Metrica lost. */
 export const touchSlot = (e: TouchEvent): string => (e.slot != null ? `#${e.slot}` : "untracked");
 
-/** The ball played between two consecutive touches. */
+/** The ball played from one player's spell to the next player's. */
 export interface BallPlay {
   f0: number;
   f1: number;
@@ -169,11 +169,21 @@ export interface BallPlay {
   from_team: Side;
   to_slot: number;
   to_team: Side;
-  kind: string; // dribble | ground pass | lofted ball | long ground pass | long lofted ball
-  outcome: "kept" | "completed" | "lost";
+  kind: string; // ground pass | lofted ball | long ground pass | long lofted ball
+  outcome: "completed" | "lost";
   length_m: number | null;
   max_h: number; // rough peak height, m
   bounces?: number;
+}
+
+/** A player's spell with the ball: his touches and the stretches he is on the ball (his column the nearest to it on
+ * every frame, from a frame it is at his feet, for at least a second), run together while nobody else's come between.
+ * A possession change is dated from the taking team's stretches on the ball just before its touch. */
+export interface Spell {
+  f0: number;
+  f1: number;
+  slot: number | null; // null: a touch by a player Metrica lost
+  team: Side;
 }
 
 /** A stretch of the ball's path between breaks, fitted with p0 + v t + a t^2 / 2 in stabilised pixels. */
@@ -199,8 +209,10 @@ export interface TouchData {
   ownBall: [number, number] | null; // our ball, video pixels
   lastTouch: TouchEvent | null;
   nextTouch: TouchEvent | null;
+  spell: Spell | null; // the spell under way on this frame
   play: BallPlay | null; // the ball played that is under way on this frame
   events: TouchEvent[]; // in the ±30 s window
   plays: BallPlay[]; // in the ±30 s window
   stretches: BallStretch[]; // in the ±30 s window
+  spells: Spell[]; // in the ±30 s window
 }

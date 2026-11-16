@@ -39,7 +39,10 @@ export function TouchesPanel() {
     );
   }
   const inRange = data.frame >= t.covered.start && data.frame <= t.covered.end;
-  const playFrom = new Map(t.plays.map((p) => [p.f0, p]));
+  // the ball played after a touch: the first one that starts at or after it, with no other touch in between (a pass
+  // starts where the player's spell ends, which can be after his last touch)
+  const playAfter = (f: number) =>
+    t.plays.find((p) => p.f0 >= f && !t.events.some((x) => x.kind === "touch" && x.f > f && x.f <= p.f0)) ?? null;
   // the most recent event at or before this frame goes at the top, then the next few
   const first = Math.max(0, t.events.findLastIndex((e) => e.f <= data.frame));
   const events = t.events.slice(first, first + 1 + NEXT_EVENTS);
@@ -54,7 +57,7 @@ export function TouchesPanel() {
         {events.map((e) => {
           const dt = (e.f - data.frame) / FPS;
           const now = Math.abs(dt) < 0.05; // reads as 0.0 s: happening on this frame
-          const play = playFrom.get(e.f);
+          const play = e.kind === "touch" ? playAfter(e.f) : null;
           if (e.kind !== "touch") {
             return (
               <li key={`b${e.f}`}>
@@ -105,13 +108,8 @@ export function TouchesPanel() {
                 </span>
                 {play && (
                   <span className="ml-14 text-xs text-zinc-400">
-                    → {play.kind}
-                    {play.outcome !== "kept" && (
-                      <>
-                        {" "}to <span style={{ color: TEAM_COLOURS[play.to_team] }}>#{play.to_slot}</span>{" "}
-                        <span className={play.outcome === "lost" ? "text-rose-400" : "text-emerald-400"}>({play.outcome})</span>
-                      </>
-                    )}
+                    → {play.kind} to <span style={{ color: TEAM_COLOURS[play.to_team] }}>#{play.to_slot}</span>{" "}
+                    <span className={play.outcome === "lost" ? "text-rose-400" : "text-emerald-400"}>({play.outcome})</span>
                     {play.length_m !== null && ` · ${play.length_m} m`}
                     {play.bounces ? ` · ${play.bounces} bounce${play.bounces > 1 ? "s" : ""}` : ""}
                   </span>

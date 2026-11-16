@@ -19,7 +19,7 @@ import {
   type Side,
 } from "../match";
 import { unproject } from "../geometry";
-import type { Assistant, AssistantFlag, Ball, BallPlay, BallPoint, BallStretch, BroadcastData, FrameData, HomographyData, OwnTrack, OwnTrackKey, Player, Run, Stoppage, Tag, TouchData, TouchEvent, Whistle } from "../types";
+import type { Assistant, AssistantFlag, Ball, BallPlay, BallPoint, BallStretch, BroadcastData, FrameData, HomographyData, OwnTrack, OwnTrackKey, Player, Run, Spell, Stoppage, Tag, TouchData, TouchEvent, Whistle } from "../types";
 
 // ---------------------------------------------------------------------------------------------
 // Paths. The viewer lives in <repo>/viewer, so the repo root is one level up. MTAH_DATA_DIR moves
@@ -307,6 +307,7 @@ interface TouchFile {
   events: TouchEvent[];
   plays: BallPlay[];
   segments?: BallStretch[];
+  spells?: Spell[];
 }
 // Stoppages from ballcv/stoppages.py. Re-read whenever the file changes.
 const stoppageCache: { mtimeMs: number; data: Stoppage[] | null } = { mtimeMs: -1, data: null };
@@ -417,10 +418,12 @@ function touchesAt(tf: TouchFile, frame: number, window: { start: number; end: n
     ownBall: tf.track[String(frame)] ?? null,
     lastTouch,
     nextTouch,
+    spell: (tf.spells ?? []).find((s) => s.f0 <= frame && frame <= s.f1) ?? null,
     play: tf.plays.find((p) => p.f0 <= frame && frame < p.f1) ?? null,
     events: tf.events.filter((e) => e.f >= window.start && e.f <= window.end),
     plays: tf.plays.filter((p) => p.f1 >= window.start && p.f0 <= window.end),
     stretches: (tf.segments ?? []).filter((g) => g.f1 >= window.start && g.f0 <= window.end),
+    spells: (tf.spells ?? []).filter((s) => s.f1 >= window.start && s.f0 <= window.end),
   };
 }
 

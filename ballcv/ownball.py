@@ -6,10 +6,12 @@ pixel space, so camera movement drops out and the ball's height never has to be 
 
   detect START END   ball candidates (heatmap.py: the ball model's top peaks) for every frame -> cands_START.npz
   link               best path through the candidates (dynamic programming) -> track.json
-  events             breaks in the ball's smooth motion -> touches (Metrica PLAYERS only) / bounces, and what kind
-                     of ball was played between touches -> data/ballcv/BAR-ATH_touches.json
+  events             breaks in the ball's smooth motion -> touches (Metrica PLAYERS only) / bounces; who the ball is
+                     with (on the ball, each player's spells), and what kind of ball was played from one player's
+                     spell to the next -> data/ballcv/BAR-ATH_touches.json
 """
 import bisect, glob, json, sys
+from collections import Counter
 import numpy as np
 
 S = __import__('paths').S
@@ -51,7 +53,6 @@ REACH_BASE_M = 0.5      # otherwise a touch needs the ball within REACH_BASE_M +
 REACH_PER_MS = 0.05     # leg is more plausible the harder the ball's motion changes), at most MAX_REACH_M,
 MAX_REACH_M = 1.5       # and the velocity change must push the ball away from that player
 PLACED_S = 1.0          # a set piece: the ball lies still (moves less than CONTACT_M) this long before it is struck
-DRIBBLE_M = 8.0
 LONG_M = 30.0
 STALE_FRAMES = 12      # a track whose position has not moved for this long is frozen (stale tracklet): it can't touch
 CLAIM_GAP_S = 1.0       # keeper claim: the ball vanishes for at least this long ...
@@ -362,6 +363,79 @@ def control_roles(touches, events):
     return changes
 
 
+def ground_positions(M, track):
+    """-> (frames, the ball's ground point (m) on each) for a pixel track."""
+    fr = np.array(sorted(track)); uv = np.array([track[f][:2] for f in fr])
+    q = np.einsum('nij,nj->ni', np.linalg.inv(M[fr]), np.c_[uv, np.ones(len(fr))])
+    return fr, q[:, :2] / q[:, 2:] * [L, W]
+
+
+def only_one_reaches(P, ts, ball, g0, g1):
+    """The first frame g in g0..g1 from which only one player can reach the ball's path (within MAX_REACH_M of where
+    it will be, running at player_track.RUN_MS) -> (g, slot index), or None. ts: the frames the ball is seen on, ball:
+    its ground points (m) there."""
+    import player_track
+    for g in range(g0, g1 + 1):
+        here = ts >= g
+        if not here.any():
+            return None
+        d = np.linalg.norm(P[g, :, None] * [L, W] - ball[here][None], axis=2)          # players x frames to come
+        can = np.flatnonzero(np.any(d <= MAX_REACH_M + player_track.RUN_MS * (ts[here] - g) / 25, axis=1))
+        if len(can) == 1:
+            return g, int(can[0])
+    return None
+
+
+def kit_at(dets, fr_g, G, f, sides, grass, ball=None):
+    """A break nobody tracked is at: the player the tracking does not have (Metrica can keep a keeper in his box, or
+    hold a player metres off) is still in the picture, in his team's kit (player_det.py) -- the nearest within
+    MAX_REACH_M of the ball, over the break's fit (FIT_HALF frames up to it). A keeper's kit, which one player wears:
+    seen once in the frame, in his own half (keepers do not cross halfway). An outfield kit: where the ball is on the
+    grass (grass), since a ball in the air has its ground point away from it. The ball where both cameras put it (ball,
+    broadcast_check.py) when they do, else its ground point. -> (team, distance m, keeper?), or None."""
+    for g in range(f, f - FIT_HALF - 1, -1):
+        if g not in dets or g not in fr_g:
+            continue
+        Gd, kit = dets[g]
+        at = np.array(ball[:2]) if ball is not None else G[fr_g[g]]
+        dd = np.linalg.norm(Gd - at, axis=1)
+        for j in np.argsort(dd):
+            if dd[j] > MAX_REACH_M:
+                break
+            k = int(kit[j])
+            if k in (2, 3):
+                t = 'HA'[k - 2]
+                if np.sum(kit == k) == 1 and sides(g)[t] == ('left' if Gd[j, 0] < L / 2 else 'right'):
+                    return t, round(float(dd[j]), 2), True
+            elif k in (0, 1) and grass:
+                return 'HA'[k], round(float(dd[j]), 2), False
+    return None
+
+
+def on_ball(M, P, track):
+    """Who the ball is with: stretches from a frame it is at a player's feet (his column the nearest, within CONTACT_M,
+    at foot height on him) while he stays the player nearest to it on the ground on every frame we see it, at least
+    PLACED_S long. On the ground, since the picture puts a ball running on behind him on his body: a ball he blocks or
+    that runs past him leaves him, one he controls moves with him. A dropout of up to PLACED_S with him the nearest
+    either side does not end it. -> [[first frame, slot index, last frame]]"""
+    need, out, run = int(PLACED_S * 25), [], None
+    fr, G = ground_positions(M, track)
+    for f, g in zip(fr.tolist(), G):
+        if run and f - run[2] <= need:
+            d = np.linalg.norm(P[f] * [L, W] - g, axis=1)
+            d = np.where(np.isfinite(d) & ~(STALE[f] if STALE is not None else False), d, np.inf)
+            if np.isfinite(d.min()) and int(np.argmin(d)) == run[1]:
+                run[2] = f; continue
+        nb = bodies(M, P, f, track[f][:2])
+        dist, k, h = nb[0][:3] if nb else (np.inf, None, 0.0)
+        if run and run[2] - run[0] + 1 >= need:
+            out.append(run)
+        run = [f, k, f] if dist <= CONTACT_M and body_part(h) == 'foot' else None
+    if run and run[2] - run[0] + 1 >= need:
+        out.append(run)
+    return out
+
+
 def window_breaks(M, track, f0, f1):
     """breaks in the ball's motion from short fits either side of every frame -> (frames, {frame: (dv, pos, vin, vout)})."""
     # 1. breaks: local maxima of the velocity change between short fits either side
@@ -426,19 +500,23 @@ def contact_bodies(M, P, track, f, pos):
     return bodies(M, P, f, pos), pos
 
 
-def at_player(P, track, f, pos, s, reach):
+def at_player(P, track, f, pos, s, reach, v_in, v_out):
     """Is the ball within reach (m) of player s's body column, measured in 3D from both cameras (broadcast_check.py) at
-    the break f (the ball's pixel pos) or, failing that, the frame before it? None where the broadcast cannot say."""
+    the break f (the ball's pixel pos) or, failing that, the latest frame of the break's fit (FIT_HALF frames) before
+    it -- within reach and the way the ball travels between there and the contact: still to come at its speed in
+    (m/s) before the break, one frame gone at its speed out at it (a break is timed at the first frame on the outgoing
+    path)? -> (verdict, the ball [x, y, height] m), (None, None) where the broadcast cannot say."""
     import broadcast_check
-    for g, uv in ((f, pos), (f - 1, track.get(f - 1))):
+    for g in range(f, f - FIT_HALF - 1, -1):
+        uv = pos if g == f else track.get(g)
         b = broadcast_check.ball_at(g, uv[:2]) if uv is not None else None
         if b is None:
             continue
         xy = P[g, s] * [L, W]
         if not np.isfinite(xy).all():
             xy = P[f, s] * [L, W]
-        return bool(np.linalg.norm([b[0] - xy[0], b[1] - xy[1], b[2] - np.clip(b[2], 0, BODY_H)]) <= reach)
-    return None
+        return bool(np.linalg.norm([b[0] - xy[0], b[1] - xy[1], b[2] - np.clip(b[2], 0, BODY_H)]) <= reach + (v_in * (f - g) if g < f else v_out) / 25), b
+    return None, None
 
 
 def cmd_events():
@@ -452,6 +530,9 @@ def cmd_events():
     global STALE, KEEPERS
     STALE = stale_mask(P); KEEPERS = keeper_slots()
     sides = sides_by_half(P)
+    import player_track
+    dets, _ = player_track.load_dets(0, len(P) - 1)
+    fr_g, G_g = ground_positions(M, track); fr_g = {f: i for i, f in enumerate(fr_g.tolist())}
     breaks, dv = window_breaks(M, track, f0, f1)
     # 2. stretches between breaks (and dropouts), each fitted with constant acceleration
     cuts = sorted(set(breaks) | {g for g in fs if g - 1 not in track} | {g + 1 for g in fs if g + 1 not in track})
@@ -480,8 +561,13 @@ def cmd_events():
             cos_away = float(dvec @ away / max(1e-9, np.linalg.norm(dvec) * np.linalg.norm(away))) if np.linalg.norm(away) > 1e-6 else 1.0
             if dist <= CONTACT_M or (not bounce_like and cos_away > 0):
                 touch = (dist, sidx, h); break
-        if touch and bounce_like:                              # the picture cannot tell: the broadcast camera, if it sees
-            seen = at_player(P, track, f, pos, touch[1], max(reach, CONTACT_M))
+        b3 = None
+        if touch and (bounce_like or body_part(touch[2]) != 'foot'):
+            # the picture cannot tell: a bounce under his body, or a ball on the grass behind him that lies on his body
+            # in the picture -- the broadcast camera, if it sees
+            k_ms = 25.0 / ppm(M[f], pos)
+            seen, b3 = at_player(P, track, f, pos, touch[1], max(reach, CONTACT_M), float(np.linalg.norm(vin)) * k_ms,
+                                 float(np.linalg.norm(vout)) * k_ms)
             asked.append(seen)
             if seen is False:
                 touch = None                                   # it puts the ball away from him
@@ -490,14 +576,19 @@ def cmd_events():
         e = dict(f=f, dv_ms=round(d, 1), v_in=round(float(np.linalg.norm(vin)) * k_ms, 1), v_out=round(float(np.linalg.norm(vout)) * k_ms, 1),
                  u=round(float(pos[0]), 1), v=round(float(pos[1]), 1), conf='break',
                  cos_up=round(cos_up, 2), before=before['kind'] if before else None, after=after['kind'] if after else None)
+        grass = 'roll' in (e['before'], e['after']) or (b3 is not None and body_part(b3[2]) == 'foot')
+        seen_at = None if touch or bounce_like else kit_at(dets, fr_g, G_g, f, sides, grass, b3)
         if touch:
             tm = keeper_team(P, f, touch[1], sides) if touch[1] in KEEPERS else team[touch[1]]
             e.update(kind='touch', slot=touch[1] + 1, team=tm, dist_m=round(touch[0], 2), body=body_part(touch[2]))
+        elif seen_at:
+            e.update(kind='touch', slot=None, lost=True, team=seen_at[0], dist_m=seen_at[1], body='foot',
+                     how=('a keeper' if seen_at[2] else 'a player') + ' the tracking does not have, seen at the ball')
         else:
             nb = nearest_body(M, P, f, pos)
             e.update(kind='bounce' if bounce_like else 'deflection', nearest=nb[1] + 1 if nb else None, dist_m=round(nb[0], 2) if nb else None)
         events.append(e)
-    print(f'{len(asked)} breaks that look like bounces, a body over them in the picture: the broadcast camera sees the ball '
+    print(f'{len(asked)} breaks that look like bounces or are high on a body in the picture: the broadcast camera sees the ball '
           f'at {sum(a is not None for a in asked)}, and puts it beyond his reach at {sum(a is False for a in asked)} -- not '
           f'touches', flush=True)
     events = sorted(events + keeper_claims(M, P, track, f0, f1, sides), key=lambda e: e['f'])
@@ -526,26 +617,59 @@ def cmd_events():
     possession = []
     for _half, h0, h1 in half_video_blocks(GAME):
         possession += control_roles([e for e in touches if h0 <= e['f'] <= h1], [e for e in merged if h0 <= e['f'] <= h1])
-    # 4. ball played between consecutive touches: lofted if any stretch in between is a flight
-    plays = []
-    for a, b in zip(touches, touches[1:]):
-        Ga, Gb = (P[e['f'], e['slot'] - 1] * [L, W] if e['slot'] else np.full(2, np.nan) for e in (a, b))
-        length = float(np.linalg.norm(Gb - Ga)) if np.all(np.isfinite([*Ga, *Gb])) else None
-        kinds = [sg['kind'] for sg in segs if sg['f1'] > a['f'] and sg['f0'] < b['f']]
-        bounces = sum(1 for e in merged if a['f'] < e['f'] < b['f'] and e['kind'] == 'bounce')
-        same = a['slot'] is not None and a['slot'] == b['slot']
-        if same and (length or 0) < DRIBBLE_M:
-            kind = 'dribble'
+    # 4. who the ball is with. A player can have the ball for seconds with touches too gentle to break its motion, or
+    # take it while we cannot see it: on the ball (on_ball), cut at another player's touch, and only from when no
+    # opponent can still play it (none within MAX_REACH_M of it on the ground): until then it is a tackle or a duel,
+    # nobody's yet. Being on the ball changes no possession by itself (a ball rolling by a standing player looks the
+    # same), but a possession change is dated from the start of the taking team's stretches on the ball just before
+    # it, since the previous touch (in its half)
+    tf = [e['f'] for e in touches]
+    halves = [(h0, h1) for _half, h0, h1 in half_video_blocks(GAME)]
+    fr, G = ground_positions(M, track); gi = {f: i for i, f in enumerate(fr.tolist())}
+    side_of = lambda f, j: keeper_team(P, f, j, sides) if j in KEEPERS else team[j]
+    with_ball = []
+    for a, k, b in on_ball(M, P, track):
+        cut = next((e['f'] for e in touches if a < e['f'] <= b and e['slot'] != k + 1), None)
+        b = b if cut is None else cut - 1
+        mine = side_of(a, k)
+        opp = [j for j in range(P.shape[1]) if side_of(a, j) != mine]
+        a = next((f for f in range(a, b + 1) if f in gi and not np.any(
+            np.linalg.norm(P[f, opp] * [L, W] - G[gi[f]], axis=1) <= MAX_REACH_M)), b + 1)
+        if b - a + 1 >= PLACED_S * 25:
+            with_ball.append(dict(f0=a, f1=b, slot=k + 1, team=mine))
+    for c in possession:
+        if c['f'] not in tf:
+            continue
+        prev = max([f for f in tf if f < c['f']] + [h0 - 1 for h0, h1 in halves if h0 <= c['f'] <= h1])
+        start = None
+        for r in reversed([r for r in with_ball if prev < r['f0'] < c['f']]):
+            if r['team'] != c['team']:
+                break
+            start = r['f0']
+        if start is not None:
+            c.update(f=start, touch=c['f'], via=c['via'] + ', on the ball')
+    print(f'{len(with_ball)} stretches on the ball; {sum("touch" in c for c in possession)} possession changes start at one', flush=True)
+    # 5. spells: each player's touches and stretches on the ball, run together while nobody else's come between; the
+    # ball played goes from one player's spell to the next player's: lofted if any stretch in between is a flight
+    spells = []
+    for s in sorted([dict(f0=e['f'], f1=e['f'], slot=e['slot'], team=e['team']) for e in touches] + with_ball, key=lambda s: s['f0']):
+        if spells and s['slot'] is not None and s['slot'] == spells[-1]['slot']:
+            spells[-1]['f1'] = max(spells[-1]['f1'], s['f1'])
         else:
-            kind = ('long ' if (length or 0) >= LONG_M else '') + ('lofted ball' if 'flight' in kinds else 'ground pass')
-        outcome = 'kept' if same else ('completed' if a['team'] == b['team'] else 'lost')
-        plays.append(dict(f0=a['f'], f1=b['f'], from_slot=a['slot'], from_team=a['team'], to_slot=b['slot'], to_team=b['team'],
-                          kind=kind, outcome=outcome, length_m=None if length is None else round(length, 1), bounces=bounces,
-                          max_h=2.0 if 'flight' in kinds else 0.0))
+            spells.append(dict(s))
+    plays = []
+    for a, b in zip(spells, spells[1:]):
+        Ga, Gb = (P[f, s['slot'] - 1] * [L, W] if s['slot'] else np.full(2, np.nan) for f, s in ((a['f1'], a), (b['f0'], b)))
+        length = float(np.linalg.norm(Gb - Ga)) if np.all(np.isfinite([*Ga, *Gb])) else None
+        kinds = [sg['kind'] for sg in segs if sg['f1'] > a['f1'] and sg['f0'] < b['f0']]
+        bounces = sum(1 for e in merged if a['f1'] < e['f'] < b['f0'] and e['kind'] == 'bounce')
+        kind = ('long ' if (length or 0) >= LONG_M else '') + ('lofted ball' if 'flight' in kinds else 'ground pass')
+        plays.append(dict(f0=a['f1'], f1=b['f0'], from_slot=a['slot'], from_team=a['team'], to_slot=b['slot'], to_team=b['team'],
+                          kind=kind, outcome='completed' if a['team'] == b['team'] else 'lost',
+                          length_m=None if length is None else round(length, 1), bounces=bounces, max_h=2.0 if 'flight' in kinds else 0.0))
     restarts = [f for f in breaks if placed_before(M, track, f)]
     json.dump(dict(frames=[f0, f1], track={str(f): [round(float(x), 1) for x in p[:2]] for f, p in track.items()},
-                   events=merged, plays=plays, segments=segs, possession=possession, restarts=restarts), open(OUT_JSON, 'w'))
-    from collections import Counter
+                   events=merged, plays=plays, spells=spells, on_ball=with_ball, segments=segs, possession=possession, restarts=restarts), open(OUT_JSON, 'w'))
     print(f'roles: {Counter(e.get("role", "outside the halves") for e in touches)};  possession changes: {len(possession)}')
     print(f'{len(touches)} touches, {Counter(e["kind"] for e in merged)}, {len(plays)} balls played; stretches: {Counter(s["kind"] for s in segs)} -> {OUT_JSON}')
 

@@ -202,9 +202,18 @@ function BallPlayedStat({ data }: { data: FrameData }) {
   }
   const last = t.lastTouch;
   const play = t.play;
+  const spell = t.spell;
   return (
     <Stat label="Ball played">
-      {last ? (
+      {spell ? (
+        <button className="text-left text-sm text-zinc-200 hover:underline" onClick={() => go(spell.f0)}>
+          On the ball{" "}
+          <span className="font-semibold" style={{ color: LABEL_COLOURS[spell.team] }}>
+            {spell.slot != null ? `#${spell.slot}` : "untracked"} {spell.team}
+          </span>{" "}
+          · {((data.frame - spell.f0) / FPS).toFixed(1)}s
+        </button>
+      ) : last ? (
         <button className="text-left text-sm text-zinc-200 hover:underline" onClick={() => go(last.f)}>
           Last touch{" "}
           <span className="font-semibold" style={{ color: LABEL_COLOURS[last.team as "H" | "A"] }}>
@@ -217,13 +226,8 @@ function BallPlayedStat({ data }: { data: FrameData }) {
       )}
       {play && (
         <div className="mt-0.5 text-xs text-zinc-400">
-          {play.kind}
-          {play.outcome !== "kept" && (
-            <>
-              {" "}→ #{play.to_slot}{" "}
-              <span className={play.outcome === "lost" ? "text-rose-400" : "text-emerald-400"}>{play.outcome}</span>
-            </>
-          )}
+          {play.kind} → #{play.to_slot}{" "}
+          <span className={play.outcome === "lost" ? "text-rose-400" : "text-emerald-400"}>{play.outcome}</span>
           {play.length_m !== null && ` · ${play.length_m} m`}
         </div>
       )}

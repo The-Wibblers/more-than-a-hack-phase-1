@@ -146,6 +146,16 @@ is controlled:
 So a contested or loose ball stays with the last team that had it until someone controls it, as CHALLENGE.md asks,
 and an aerial duel won without control by that team does not change possession.
 
+A player can have the ball for seconds with touches too gentle to break its motion, or take it while we cannot see
+it. So we also ask who the ball is *with*. A player is *on the ball* from a frame it is at his feet (within
+`CONTACT_M`, at foot height) while he stays the player nearest to it on the ground, for at least `PLACED_S`. We compare
+on the ground because the picture puts a ball running on behind a player on his body. A ball he controls moves with
+him; one he blocks, or that runs past him, leaves him, and someone else is soon nearer. Being on the ball changes
+nothing by itself, since a ball rolling past a standing player looks the same. But a change of
+possession is dated from the start of the taking team's stretches on the ball just before its touch: not before the
+previous touch, the start of the half, or a dead ball. A player's touches and stretches on the ball make up his
+*spell*, and a ball played goes from one player's spell to the next player's.
+
 **Live play: the touch model, which we submit** (`possession/touch_possession.py`). The control rule is one fixed
 reading of "controlled". The touch model learns it instead, from the 20 SkillCorner games:
 

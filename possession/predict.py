@@ -94,7 +94,8 @@ def read_whistles(path):
 
 
 def read_touches(path):
-    """-> (first, last) covered frames and [(frame, HOME|AWAY)] possession changes, or None without a touch file.
+    """-> (first, last) covered frames and [(frame, HOME|AWAY, touch frame)] possession changes, or None without a touch
+    file. A change is dated from the taking team being on the ball, before the touch that took it, where they were.
 
     The changes are the touch pipeline's controlled-possession sequence: an opponent's block or tackle does not
     change possession unless his team's next touch is theirs again. Older files without it fall back to every touch."""
@@ -104,7 +105,7 @@ def read_touches(path):
     with open(path) as handle:
         data = json.load(handle)
     events = data.get("possession") or [e for e in data["events"] if e["kind"] == "touch"]
-    changes = sorted((e["f"], HOME if e["team"] == "H" else AWAY) for e in events)
+    changes = sorted((e["f"], HOME if e["team"] == "H" else AWAY, e.get("touch", e["f"])) for e in events)
     return tuple(data["frames"]), changes
 
 
@@ -247,6 +248,8 @@ def predict(game=GAME, window=WINDOW, use_touches=True, use_stoppages=True):
     touch_file = read_touches(TOUCHES_JSON.format(game=game)) if use_touches else None
     if touch_file:
         covered, changes = touch_file
+        # a change dated from the taking team being on the ball (before its touch): not while the ball was dead
+        changes = [(max([f] + [g + 1 for g in np.flatnonzero(dead[f:t]) + f]), code) for f, code, t in changes]
         if use_stoppages:                                           # a restart: the team taking it has the ball
             changes = sorted(changes + [r for r in stoppage_restarts(STOPPAGES_JSON.format(game=game))
                                         if covered[0] <= r[0] <= covered[1]])

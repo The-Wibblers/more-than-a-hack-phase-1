@@ -334,6 +334,20 @@ export function Timeline() {
           </Row>
         )}
         {data.touches && (
+          <Row label="On the ball" onClick={onClick} marker={pos(data.frame)} guides={guides}>
+            {data.touches.spells.map((s) => (
+              <Bar
+                key={`${s.f0}-${s.slot ?? "?"}`}
+                left={pos(s.f0)}
+                width={pos(s.f1 + 1) - pos(s.f0)}
+                colour={TEAM_COLOURS[s.team]}
+                text={s.slot != null ? `#${s.slot}` : "?"}
+                title={`${s.slot != null ? `#${s.slot}` : "untracked"} ${s.team} on the ball · frames ${s.f0}–${s.f1}`}
+              />
+            ))}
+          </Row>
+        )}
+        {data.touches && (
           <Row label="Ball motion" onClick={onClick} marker={pos(data.frame)} guides={guides} thin>
             {data.touches.stretches.map((g) => (
               <Bar
@@ -350,11 +364,11 @@ export function Timeline() {
           <Row label="Ball played" onClick={onClick} marker={pos(data.frame)} guides={guides}>
             {data.touches.plays.map((p) => (
               <Bar
-                key={p.f0}
+                key={`${p.f0}-${p.f1}`}
                 left={pos(p.f0)}
                 width={pos(p.f1) - pos(p.f0)}
                 colour={TEAM_COLOURS[p.from_team]}
-                text={p.kind === "dribble" ? "dribble" : p.kind.replace("ground pass", "pass").replace("lofted ball", "lofted")}
+                text={p.kind.replace("ground pass", "pass").replace("lofted ball", "lofted")}
                 title={`${p.kind} #${p.from_slot} → #${p.to_slot} (${p.outcome})${p.length_m !== null ? ` · ${p.length_m} m` : ""} · frames ${p.f0}–${p.f1}`}
               />
             ))}

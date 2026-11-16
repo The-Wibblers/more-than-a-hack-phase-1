@@ -26,7 +26,8 @@ Per STFT column (16 ms hop) the score is built in four steps:
 4. score       the strongest line at least 250 Hz from the strongest  (two tones at once)
 
 A whistle is a run of columns with score >= SCORE_MIN, runs closer than MERGE_S joined, at least
-MIN_DURATION_S long.
+MIN_DURATION_S long -- and the referee's: most of its columns on one of his two tones, the two pitches the match's
+whistle sound holds most often (fans' whistles are pitched anywhere in the band, and jump between pitches).
 
 Columns
 -------
@@ -132,7 +133,11 @@ def whistle_score(audio):
 
 
 def find_whistles(t, score, pitch):
-    """(start_s, end_s, peak score, median pitch) of each whistle."""
+    """(start_s, end_s, peak score, median pitch) of each whistle: runs of whistle-like sound held for MIN_DURATION_S,
+    and of those, the referee's. He blows the same whistle all match, while the crowd's whistles scatter over the band:
+    his two tones are the two pitches the match's whistle sound holds most often (each counting the columns within the
+    prominence width of it; the second at least SECOND_TONE_HZ from the first), and a run is his when most of its
+    columns sit on one of them."""
     edges = np.diff(np.concatenate(([0], (score >= SCORE_MIN).astype(np.int8), [0])))
     merged = []
     for s, e in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1) - 1):
@@ -140,8 +145,19 @@ def find_whistles(t, score, pitch):
             merged[-1][1] = e
         else:
             merged.append([s, e])
-    return [(t[s], t[e], float(score[s:e + 1].max()), float(np.median(pitch[s:e + 1])))
-            for s, e in merged if t[e] - t[s] >= MIN_DURATION_S]
+    hop = HOP / SAMPLE_RATE                                      # a run of columns lasts to the end of its last one
+    runs = [(s, e) for s, e in merged if t[e] - t[s] + hop >= MIN_DURATION_S]
+    held = lambda s, e: pitch[s:e + 1][score[s:e + 1] >= SCORE_MIN]
+    width = PROMINENCE_BINS // 2 * SAMPLE_RATE / NPERSEG
+    heard = np.concatenate([held(s, e) for s, e in runs])
+    grid = np.unique(heard)
+    support = np.array([np.sum(np.abs(heard - g) <= width) for g in grid])
+    first = grid[np.argmax(support)]
+    far = np.abs(grid - first) >= SECOND_TONE_HZ
+    tones = np.array([first, grid[far][np.argmax(support[far])]])
+    print("the referee's tones: {:.0f} Hz and {:.0f} Hz".format(*tones))
+    his = lambda s, e: np.mean(np.min(np.abs(held(s, e)[:, None] - tones[None]), axis=1) <= width) > 0.5
+    return [(t[s], t[e], float(score[s:e + 1].max()), float(np.median(pitch[s:e + 1]))) for s, e in runs if his(s, e)]
 
 
 def player_speed(atd_raw):
