@@ -184,7 +184,7 @@ python evaluation/run_evaluation.py
 cd viewer && npm install && npm run dev   # http://localhost:3000
 ```
 
-The steps, and where every file they write lives, are in [writeup.md](writeup.md#6-reproduction).
+The steps, and where every file they write lives, are in [writeup.md](writeup.md#5-reproduction).
 
 ---
 
