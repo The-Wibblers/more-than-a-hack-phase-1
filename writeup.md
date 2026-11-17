@@ -268,8 +268,7 @@ controlled:
 | the ball reached him **loose** (a bounce or a deflection since the last touch) | yes: nobody had it. But not in a **duel**, with a player of the team in possession within reach too: who touched it is in doubt, and the other team's touch is as likely a block |
 | his team's **next play on the ball is theirs again** (its next touch, or a stretch on the ball, whichever comes first), or nothing follows | yes: an interception or tackle that kept it |
 | a **goalkeeper's claim** | yes, at once. A claim we cannot see (the ball vanishes, and is next seen in his hands) is dated when the ball, at the speed it was last seen at, reaches him |
-| a **driven** touch: the ball leaves him at least 2 m/s faster than it arrived | yes: he added energy to it, so he played it (a control or a clearance). A block cannot speed the ball up |
-| a lone touch **between two of the other team's**, not driven | no: a block, a poke or a deflection of a pass |
+| a lone touch **between two of the other team's** | no: a block, a poke or a deflection of a pass |
 | a head-height "touch" of a ball **flying over** him | no: not a touch at all |
 
 So a contested or loose ball stays with the last team that had it until someone controls it, as CHALLENGE.md asks,
