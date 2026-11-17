@@ -52,6 +52,8 @@ CONTACT_M = 0.7         # ball this close to a player's column: a touch even if 
 REACH_BASE_M = 0.5      # otherwise a touch needs the ball within REACH_BASE_M + REACH_PER_MS * dv (an outstretched
 REACH_PER_MS = 0.05     # leg is more plausible the harder the ball's motion changes), at most MAX_REACH_M,
 MAX_REACH_M = 1.5       # and the velocity change must push the ball away from that player
+DRIVEN_MS = 2.0         # a touch that sends the ball away this much faster than it arrived added energy: a deliberate
+                        # play (a control or clearance), not a passive block -- a block cannot speed the ball up
 PLACED_S = 1.0          # a set piece: the ball lies still (moves less than CONTACT_M) this long before it is struck
 LONG_M = 30.0
 STALE_FRAMES = 12      # a track whose position has not moved for this long is frozen (stale tracklet): it can't touch
@@ -423,7 +425,10 @@ def control_roles(touches, events, with_ball=()):
         prev = touches[i - 1]['f'] if i else None
         loose = prev is not None and bisect.bisect_right(others, prev) < bisect.bisect_left(others, e['f'])
         loose = loose and not e.get('rival_m', np.inf) <= MAX_REACH_M      # a duel: the benefit of the doubt to the team with it
-        if current is None or e.get('claim') or loose or nxt is None or nxt['team'] == e['team']:
+        # the ball leaves faster than it arrived: energy was added, so he played it (a control or clearance), not just
+        # blocked it -- a passive deflection cannot speed the ball up
+        driven = e.get('v_out') is not None and e.get('v_in') is not None and e['v_out'] >= e['v_in'] + DRIVEN_MS
+        if current is None or e.get('claim') or loose or driven or nxt is None or nxt['team'] == e['team']:
             e['role'] = 'keeper claim' if e.get('claim') else 'control' if current is None else 'interception'
             changes.append(dict(f=e['f'], team=e['team'], via='start' if current is None else e['role']))
             current = e['team']
