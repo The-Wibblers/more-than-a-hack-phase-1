@@ -127,6 +127,34 @@ rather than waiting on the arc-strike detection.
 
 ---
 
+## 8. Tagged throw-in: dead ball runs ~28 s past the throw — FIXED (bounded restart_of)
+
+**Fix in this branch (`stoppages.py`):** `restart_of` no longer matches a strike more than `TAG_RESTART_CAP_S`
+(10 s) past the tag — a tagged set piece is taken within seconds of its tag, so a far-later "strike" is a
+mismatch. The nearby throw is then found (or the `players resume` fallback lands it near the real restart).
+120673 now ends at 120581 (was 121387). **0 frames changed in the 5-min window; spellF1 0.8267 unchanged.**
+Note: using the tag time *directly* regressed the window (the tag isn't a reliable restart), so we bound the
+search instead. **#7 (corner, ~3 s mismatch within the cap) is a tighter sub-case and is NOT fixed by this.**
+
+_Original diagnosis:_
+
+**Frame 120624 (throw-in tag) / ~120673 (away throws) → stoppage ends 121387.** The dead ball is held
+**~28 s too long**: `D` from 120493 all the way to 121387, past the throw and past real play after it.
+
+- Smart-tag: **Throw-in, start 120624** (team N/A, as throw-ins are).
+- Stoppage: `start 120493 (ball exit) … end 121387, restart 121388` — `cause='tag', waits_for='throw-in'`.
+- Our touch: **A interception at 120802** — play *after* the throw, buried under `D`.
+
+**Root cause:** the pipeline knows it's a throw-in (from the tag) but times the restart from its own late
+detection (121388), not the tag. The thrower isn't caught as a "touchline strike," so the throw-detection
+falls through to a much later event.
+
+**Lever:** same as #7 — when a restart is **tagged**, end the dead ball at the tag (or the first touch just
+after it), rather than waiting on the throw/strike detection. #7 (corner, ~3 s) and #8 (throw-in, ~28 s) are
+the same bug at different severities.
+
+---
+
 ## Pattern notes
 
 - **Stoppage boundaries** (#2, #4, #6): pinning when play stops/restarts when the ball is near a line, a

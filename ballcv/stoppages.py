@@ -52,6 +52,8 @@ TAG_KIND = {'Throw-in': 'throw-in', 'Corner Kick': 'corner', 'Goal Kick': 'goal 
 TAG_TEAM = {'Barcelona': 'H', 'Atletic Club': 'A'}
 OUT_S = 20                 # an out is tagged within this many seconds of it
 TAG_LEAD_S = 5             # ... or up to this long before it
+TAG_RESTART_CAP_S = 10     # a tagged set piece is taken within seconds of its tag: a detected restart more than this
+                           # long after it is a later strike we mismatched, not the restart -- the tag times it instead
 FLAG_LAG_S = 2             # the assistant raises the flag within this long of the ball going out
 DROP_S = 3                 # the fastest players' speed is compared over this long before and after
 FASTEST = 3                # ... the mean of the fastest this many
@@ -467,7 +469,10 @@ def cmd_build():
                 if seen:
                     restart, kind = min(seen)
                 else:
-                    restart = restart_of(kind, s, earliest, limit, rw)
+                    # a tagged set piece is taken within seconds of its tag -- do not match a strike far beyond it
+                    # (a later restart we would mismatch, as a missed throw lets the search run on)
+                    cap = min(limit, anchor + TAG_RESTART_CAP_S * 25) if cause == 'tag' and kind != 'kick-off' else limit
+                    restart = restart_of(kind, s, earliest, cap, rw)
                 ended = 'restart'
                 if restart is None:                                               # the players resume (they react just after)
                     # (a kick-off: from its tag -- before it, the players were celebrating, or warming up)
