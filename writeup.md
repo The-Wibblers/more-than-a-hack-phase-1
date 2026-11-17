@@ -12,8 +12,7 @@ On the public five minutes:
 
 | | macroF1 | spellF1 | possessions (truth: 17) |
 |---|---|---|---|
-| **Touch model** (submitted) | **0.970** | **0.827** | 13 |
-| Possession rule on the same touches | 0.965 | 0.800 | 13 |
+| **Our possession rules** (submitted) | **0.974** | **0.827** | 13 |
 | `baseline_smooth125` (the best published baseline) | 0.581 | 0.424 | 16 |
 
 The sections follow RULES.md: what we used and why it is inspectable, how the labels come from algorithms, what we
@@ -34,7 +33,6 @@ in it. Every network is small, defined in `ballcv/`, and trained here from scrat
 | Smart Tagging | The set-piece tags: which restart a stoppage waits for, and who takes it |
 | Broadcast video | Put on the tactical clock by aligning the two feeds. Its **audio** gives the referee's whistle; its **picture**, a second view of the ball, settles touches the tactical camera cannot see in depth (section 4). Live frames only |
 | A product photo of the match ball, the Puma Orbita ([public URL](https://www.prodirectsport.us/products/puma-orbita-laliga-1-24-25-fifa-quality-pro-puma-white-multicolor-puma-white-multicolor-1008765)) | One constant: the ball's mean colour, so the ball detector's seed looks for whitish blobs. `python ballcv/selftrain.py orbita` measures it again from the photo, which is not committed |
-| SkillCorner Open Data (MIT, 20 A-League games) | Teaches the possession model how touches turn into possession (section 5) |
 
 **Tried and dropped:** Metrica's broadcast ball, fused with the tactical one (it lags and is smoothed: for the second view we detect the ball ourselves); IDSSE Bundesliga data, whose
 possession is labelled per touch, not per spell as here; learned possession models on tracking features; a classical
@@ -84,8 +82,9 @@ one at the far touchline had been tracked as Athletic, and every touch there wen
 
 Only the public five minutes exist for us, and **nothing is fitted or selected on them**. Every frame in that window
 is kept out of every detector's training, and no threshold or weight was tuned on it: the constants are physical, or
-measured on the match itself without labels. We use the window as a correctness check: when it scored worse, we
-looked for the error in the mechanism, not for a better constant. The possession model learns from SkillCorner alone.
+measured on the match itself without labels (the referee's whistle, for one, is learned from its tagged kick-offs).
+We use the window as a correctness check: when it scored worse, we looked for the error in the mechanism, not for a
+better constant.
 
 ## 4. The provided data as a starting point: what we replaced
 
@@ -111,9 +110,23 @@ camera and the officials (section 2), and judged each against physics:
     sees the ball at 82, and puts it beyond the player's reach at 41.
 - **The ball in the air** (`ball3d.py`). Between two breaks the ball either rolls or flies on a gravity arc. Fitting
   the arc to the rays through the ball's pixel gives its height, so a ball in the air past a line is not called out.
-- **The whistle** (`alignment/detect_whistles.py`). This is a pea-whistle detector on the broadcast audio: two or
-  more flat, narrow tones that start and stop together. It found both kickoffs. Its two hits in the public window are
-  stoppages, 0.3 s and 0.6 s before the labelled dead ball.
+- **The whistle** (`alignment/detect_whistles.py`). Nothing in the detector says what the referee's whistle sounds
+  like: no band, no pitch, no number of tones. It is learned from the match's own kick-offs, which the Laws of the
+  Game make him whistle and the smart tags mark. Across the whole audible band, the detector looks for tonal sound: a
+  line narrow in frequency, louder than the same frequency a moment before, and held. Then it asks which frequencies
+  stand out more in the 25 s after a kick-off tag than in any other 25 s of the match. Significance is judged
+  against random sets of six windows, so that neighbouring frequencies are not counted as separate tests. His
+  whistle at each kick-off is where those frequencies peak; his tones are the lines it holds at most kick-offs.
+  On BAR-ATH that is two tones, 3836 and 4266 Hz, found at five of the six kick-offs; the sixth tag has only a faint
+  pip. Commentary, crowd and the mix's constant hum all fail the test. A whistle is then his tones sounding together;
+  a run too short to be a whistle is kept as a pip, which only times a stoppage that other evidence shows.
+
+  An earlier version found his tones without the tags, as the two pitches the match's whistle sounds hold most
+  often. The two agree on 39 of that version's 45 whistles, score and all. But a constant hum in the mix pulled one of
+  its tones 130 Hz low, so five other sounds passed as his. Two of them made false stoppages: a keeper holding the
+  ball while players walked back, and advantage played on at the edge of the box. In the broadcast, play is live in
+  both. Learning the tones from the kick-offs removes both, about 36 s of play, and changes nothing else. Its two hits
+  in the public window are stoppages, 0.3 s and 0.6 s before the labelled dead ball.
 
 ## 5. The possession rules
 
@@ -132,13 +145,13 @@ play. Here is how we drew those lines.
 4. **Who has the ball after:** the team named on the tag; otherwise the team of the player at the ball when it
    restarts.
 
-**Live play: the rule** (`ownball.control_roles`). A touch by the team not in possession takes the ball only if it
-is controlled:
+**Live play: the rules, which we submit** (`ownball.control_roles`, then `possession/predict.py`). A touch by the
+team not in possession takes the ball only if it is controlled:
 
 | case | change of possession? |
 |---|---|
-| the ball reached him **loose** (a bounce or a deflection since the last touch) | yes: nobody had it |
-| his team's **next touch is theirs again**, or no touch follows | yes: an interception or tackle that kept it |
+| the ball reached him **loose** (a bounce or a deflection since the last touch) | yes: nobody had it. But not in a **duel**, with a player of the team in possession within reach too: who touched it is in doubt, and the other team's touch is as likely a block |
+| his team's **next play on the ball is theirs again** (its next touch, or a stretch on the ball, whichever comes first), or nothing follows | yes: an interception or tackle that kept it |
 | a **goalkeeper's claim** | yes, at once. A claim we cannot see (the ball vanishes, and is next seen in his hands) is dated when the ball, at the speed it was last seen at, reaches him |
 | a lone touch **between two of the other team's** | no: a block, a poke or a deflection of a pass |
 | a head-height "touch" of a ball **flying over** him | no: not a touch at all |
@@ -156,33 +169,10 @@ possession is dated from the start of the taking team's stretches on the ball ju
 previous touch, the start of the half, or a dead ball. A player's touches and stretches on the ball make up his
 *spell*, and a ball played goes from one player's spell to the next player's.
 
-**Live play: the touch model, which we submit** (`possession/touch_possession.py`). The control rule is one fixed
-reading of "controlled". The touch model learns it instead, from the 20 SkillCorner games:
-
-- **Input:** home or away touches every 0.1 s.
-- **Output:** who has the ball, from SkillCorner's phases of play. Their median possession lasts 7.7 s, against 7.6 s
-  on BAR-ATH.
-- **Training:** a small bidirectional GRU on 60 s windows. Its touches are degraded at random every time (up to 30%
-  missed, up to one false touch a minute), so it never relies on a perfect touch stream.
-- **Where it decides:** only inside gaps between touches no longer than the longest gap SkillCorner ever shows within
-  one possession, 25.5 s. Beyond that it says nothing new, and the rule's last touch stands.
-- **Dead balls:** it takes them from the rule's file, unchanged.
-
-On the 4 held-out SkillCorner test games, accuracy on live steps is:
-
-| touches | last touch | control rule | touch model |
-|---|---|---|---|
-| all of SkillCorner's | 0.934 | 0.931 | **0.948** |
-| 15% missed | 0.912 | 0.907 | **0.931** |
-| 30% missed, 1 false a minute | 0.881 | 0.885 | **0.911** |
-
-On the public five minutes, the gain over the rule is in the timing of transitions (transition F1 0.83 against 0.78),
-which lifts spellF1 from 0.800 to 0.827.
-
 ## 6. Reproduction
 
-The trained models are committed in `ballcv/models/`: the ball, kit, player, assistant and flag detectors, and the
-touch model. Regenerating the submission from them needs no training:
+The trained models are committed in `ballcv/models/`: the ball, kit, player, assistant and flag detectors.
+Regenerating the submission from them needs no training:
 
 ```bash
 pip install -r requirements.txt          # Python 3.12; ffmpeg on the PATH
@@ -191,7 +181,7 @@ pip install -r requirements.txt          # Python 3.12; ffmpeg on the PATH
 # caches and alignment
 python ballcv/cache_tracking.py                       # the ATD as arrays
 python alignment/align_broadcast.py                   # broadcast frame -> tactical frame
-python alignment/detect_whistles.py                   # the referee's whistles
+python alignment/detect_whistles.py                   # the referee's whistles, learned from the kick-off tags
 python ballcv/refine_h.py fit                         # the homography snapped to the painted lines
 
 # the ball, the players and the officials, by the committed models
@@ -201,9 +191,9 @@ python ballcv/player_det.py detect 11185 190197
 python ballcv/player_track.py run 11185 190197
 python ballcv/flag_self.py signals 11185 190197
 
-# touches, stoppages, possession -> evaluation/results/possession_touch_model.csv
+# touches, stoppages, possession -> evaluation/results/possession_touches.csv
 python ballcv/run_match.py
-python evaluation/validate_submission.py evaluation/results/possession_touch_model.csv
+python evaluation/validate_submission.py evaluation/results/possession_touches.csv
 ```
 
 To train the models again from nothing, before the detection steps (each `run` copies its last model into
@@ -215,8 +205,6 @@ python ballcv/kit_team.py run                         # the kits
 python ballcv/player_det.py run                       # the players
 python ballcv/assistant_self.py run                   # the assistant referees
 python ballcv/flag_self.py run                        # their flags
-python -m external.download skillcorner && python -m external.build skillcorner
-python possession/touch_possession.py build && python possession/touch_possession.py train   # the touch model
 ```
 
 `run_match.py` skips steps whose output is already newer than their inputs. Every cache lives under `data/`, which is
@@ -237,7 +225,5 @@ gitignored like the match data itself. `cd viewer && npm install && npm run dev`
 - **The flags are noisy.** On the near touchline, 15% of raises follow a ball going out, against 5% by chance; on
   the far line, none do. So the flag only confirms.
 - **Unwhistled, untagged stoppages** depend on the ball being seen leaving the pitch, or on the players slowing down.
-- **The touch model learned from another league** and from broadcast tracking at 10 Hz. More open data with
-  possession labelled per spell would help most.
 - **The check is small.** The public window has 17 possessions, so differences of a few hundredths of spellF1
-  between our two methods are inside the noise EVALUATION.md describes.
+  are inside the noise EVALUATION.md describes.

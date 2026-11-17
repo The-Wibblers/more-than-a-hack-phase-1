@@ -170,16 +170,14 @@ ballcv/                       the ball, players, kits and officials in the tacti
   run_match.py                  everything after the models, in order, to the submission file
 alignment/                    the broadcast's clock against the tactical one; the referee's whistle in its audio
 possession/
-  predict.py                    the possession rule on our touches and stoppages
-  touch_possession.py           the touch model, learned from SkillCorner's open data (submitted)
-external/                     downloads and normalises SkillCorner's open data
+  predict.py                    the possession rules on our touches and stoppages (submitted)
 viewer/                       Next.js app to step through the match frame by frame (viewer/README.md)
 ```
 
 The full sequence of commands is in [writeup.md](writeup.md#6-reproduction). Once the models are trained:
 
 ```bash
-python ballcv/run_match.py            # -> evaluation/results/possession_touch_model.csv
+python ballcv/run_match.py            # -> evaluation/results/possession_touches.csv
 python evaluation/run_evaluation.py
 cd viewer && npm install && npm run dev   # http://localhost:3000
 ```

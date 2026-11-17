@@ -136,9 +136,8 @@ export interface FrameData {
   gtRuns: Run<Label>[];
   touches: TouchData | null; // our own ball track + touches (null when the touch file has not been generated)
   ownTracks: OwnTrack[]; // our ball track (self-trained ball detector, ownball.py link), when its file exists
-  pred: Label | null; // our possession label (possession/touch_possession.py public); null when no prediction file exists
+  pred: Label | null; // our possession label (possession/predict.py, our rules); null when no prediction file exists
   predRuns: Run<Label>[] | null;
-  oldRuleRuns: Run<Label>[] | null; // possession/predict.py, the control rule; null when it has not been run
   stoppages: Stoppage[] | null; // in the ±30 s window; null when ballcv/stoppages.py has not been run
   assistants: Assistant[] | null; // null when ballcv/viewer_export.py has not been run
   assistantFlags: AssistantFlag[] | null; // in the ±30 s window; null when ballcv/viewer_export.py has not been run

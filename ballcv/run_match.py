@@ -5,9 +5,8 @@ and newer than what it is built on, is skipped; the cheap ones after it always r
   2. the touches                         ownball.py events          -> data/ballcv/BAR-ATH_touches.json
   3. the ball in 3D                      ball3d.py fit              -> work/align/ball3d.npz
   4. the stoppages                       stoppages.py               -> data/ballcv/BAR-ATH_stoppages.json
-  5. possession, the rule                possession/predict.py      -> evaluation/results/possession_touches.csv
-  6. possession, the touch model         touch_possession.py public -> evaluation/results/possession_touch_model.csv
-  7. for the viewer                      viewer_export.py           -> our assistants, flags and player tracks
+  5. possession, our rules               possession/predict.py      -> evaluation/results/possession_touches.csv
+  6. for the viewer                      viewer_export.py           -> our assistants, flags and player tracks
 
   python ballcv/run_match.py
 """
@@ -39,5 +38,4 @@ if __name__ == '__main__':
     run(os.path.join(HERE, 'ball3d.py'), 'fit')
     run(os.path.join(HERE, 'stoppages.py'))
     run(os.path.join(POSS, 'predict.py'))
-    run(os.path.join(POSS, 'touch_possession.py'), 'public')
     run(os.path.join(HERE, 'viewer_export.py'))

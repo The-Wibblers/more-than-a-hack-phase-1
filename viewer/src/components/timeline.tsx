@@ -203,20 +203,6 @@ export function Timeline() {
             ))}
           </Row>
         )}
-        {data.oldRuleRuns && (
-          <Row label="Old rule" onClick={onClick} marker={pos(data.frame)} guides={guides}>
-            {data.oldRuleRuns.map((r) => (
-              <Bar
-                key={r.start}
-                left={pos(r.start)}
-                width={pos(r.end + 1) - pos(r.start)}
-                colour={LABEL_COLOURS[r.value]}
-                text={r.value}
-                title={`old rule ${r.value} · frames ${r.start}–${r.end}`}
-              />
-            ))}
-          </Row>
-        )}
         {data.stoppages && (
           <Row label="Stoppages" onClick={onClick} marker={pos(data.frame)} guides={guides}>
             {data.stoppages.length === 0 && <span className="absolute inset-0 flex items-center pl-2 text-zinc-600">no stoppage in this window</span>}

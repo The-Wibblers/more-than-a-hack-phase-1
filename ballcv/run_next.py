@@ -2,7 +2,7 @@
 
   1. the flags: the flag model on the whole match, then its raises, checked     (flag_self.py signals, raises)
   2. the players over the whole match: detected, then tracked                   (player_det.py detect, player_track.py run)
-  3. the touch model: its seed (benchmarked first), then its rounds              (touch_self.py run)
+  3. the touch detector: its seed (benchmarked first), then its rounds           (touch_self.py run)
 
   python ballcv/run_next.py
 """

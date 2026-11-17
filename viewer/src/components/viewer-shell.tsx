@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { FPS, LABEL_COLOURS, PUBLIC_GT, matchClock, videoClock, type Label } from "@/lib/match";
 import { touchSlot, type FrameData, type Whistle } from "@/lib/types";
 
@@ -22,10 +21,7 @@ export function ViewerShell() {
             Barcelona v Athletic Club <span className="font-normal text-zinc-500">· tactical camera</span>
           </h1>
           <p className="text-xs text-zinc-500">
-            ← → frame · Shift 1 s · Option/Alt 10 s ·{" "}
-            <Link href="/games" className="text-zinc-400 hover:text-zinc-100 hover:underline">
-              all games
-            </Link>
+            ← → frame · Shift 1 s · Option/Alt 10 s
           </p>
         </div>
         <FrameNav />

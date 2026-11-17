@@ -49,12 +49,8 @@ export const PATHS = {
   broadcastAlignment: asset("broadcast", "_to_tactical.csv"),
   // written by alignment/detect_whistles.py
   whistles: asset("broadcast", "_whistles.csv"),
-  // written by possession/touch_possession.py public (ballcv/run_match.py): the possession we submit
-  prediction: [
-    path.join(REPO_ROOT, "evaluation", "results", "possession_touch_model.csv"),
-  ],
-  // written by possession/predict.py: the control rule in live play, which the touch model replaced
-  oldRule: path.join(REPO_ROOT, "evaluation", "results", "possession_touches.csv"),
+  // written by possession/predict.py (ballcv/run_match.py): the possession we submit, by our rules
+  prediction: [path.join(REPO_ROOT, "evaluation", "results", "possession_touches.csv")],
   // written by our own ball tracker (ownball.py events): pixel ball track, touches, balls played
   touches: path.join(DATA_DIR, "ballcv", "BAR-ATH_touches.json"),
   // written by ballcv/stoppages.py: each stoppage, the restart it waits for, and when that came
@@ -762,7 +758,6 @@ export function getFrame(frame: number): FrameData {
   const window = { start: Math.max(0, frame - WINDOW_FRAMES), end: Math.min(N_FRAMES - 1, frame + WINDOW_FRAMES) };
   const broadcast = bc ? broadcastAt(bc, frame, window) : null;
   const pred = loadPrediction(PATHS.prediction);
-  const oldRule = loadPrediction([PATHS.oldRule]);
   const touchFile = loadTouches(PATHS.touches);
   const ballInUse = tacticalBallAt(atd, frame);
   const broadcastBall = broadcastBallAt(bc, frame);
@@ -845,6 +840,5 @@ export function getFrame(frame: number): FrameData {
     assistantFlags: flagFile ? flagFile.signals.filter((s) => s.end >= window.start && s.start <= window.end) : null,
     pred: pred ? LABEL_CODES[pred[frame]] : null,
     predRuns: pred ? runs(window.start, window.end, (f) => (pred[f] ? LABEL_CODES[pred[f]] : null)) : null,
-    oldRuleRuns: oldRule ? runs(window.start, window.end, (f) => (oldRule[f] ? LABEL_CODES[oldRule[f]] : null)) : null,
   };
 }
