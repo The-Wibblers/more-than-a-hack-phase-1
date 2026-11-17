@@ -10,7 +10,7 @@ if REPO not in sys.path:
 import games  # noqa: E402
 
 DATA = games.DATA_DIR.rstrip('/') + '/'
-PITCH = games.GAMES[games.GAME]['pitch']                       # length, width (m), from the match's metadata
+PITCH = games.GAMES[games.GAME]['pitch']     # length, width (m): the metadata's, the length measured on the corrected tracking
 TACTICAL_VIDEO = games.video_path()
 BROADCAST_VIDEO = games.video_path(source='broadcast')
 TAGS = games.asset_paths()['smart_tagging']                    # Metrica's smart tags
