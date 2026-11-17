@@ -1,7 +1,7 @@
 """The supplied per-frame homographies (normalised pitch -> image pixels), and the camera each one implies."""
 import numpy as np, pandas as pd
 D=__import__('paths').DATA + ''
-L,W=105.3,68.0
+L,W=__import__('paths').PITCH
 CX,CY=960.0,540.0
 
 def load_h(src):

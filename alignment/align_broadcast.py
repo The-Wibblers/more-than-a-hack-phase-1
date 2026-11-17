@@ -61,7 +61,7 @@ CONFIDENT_COST = 1.0  # a brute-force match this good...
 CONFIDENT_RATIO = 2.0  # ...and this much better than the best match elsewhere is trusted
 OFFSET_REFINE = 10  # frames either side of a coarse offset to test exactly
 LIVE_MAX_COST = 1.5  # smoothed cost at or below this means the picture is live
-SMOOTH_FRAMES = 13
+SMOOTH_FRAMES = 12  # half a second: the cost of matching the two feeds, as a rolling median
 CHUNK = 4000
 
 WIPE_RGB = (236, 55, 66)

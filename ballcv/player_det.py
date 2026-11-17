@@ -8,7 +8,7 @@ outfield and goalkeeper kit), like heatmap.py's ball heatmap.
 
 Feet stand on the grass, so a feet peak is a ground point through the homography, exactly. But a player hidden behind
 another shows his head and shoulders, not his feet. So a head peak with no feet peak under it is a player too: his
-ground point is where the ray through his head is HEAD_M up (the camera's centre known, ownball.CT) -- rougher (a
+ground point is where the ray through his head is HEAD_M up (the camera's centre known, ownball.camera_centre) -- rougher (a
 player 0.15 m taller or shorter moves it ~0.6 m at the far touchline), enough to know he is in a duel. Every label
 teaches both points where they truly are, hidden or not: a player found by his head teaches where his feet were.
 
@@ -102,7 +102,8 @@ def body_at(f, G):
 
 def point_at(f, G, h):
     """pixel of the point h m above ground point G (m), as ownball.column."""
-    Q = ob.CT[:2] + (np.asarray(G, float) - ob.CT[:2]) * ob.CT[2] / (ob.CT[2] - h)
+    CT = ob.camera_centre()
+    Q = CT[:2] + (np.asarray(G, float) - CT[:2]) * CT[2] / (CT[2] - h)
     q = M[f] @ [Q[0] / L, Q[1] / W, 1.0]
     return q[:2] / q[2]
 
@@ -110,7 +111,8 @@ def point_at(f, G, h):
 def ground_under_head(f, uv):
     """ground point (m) of a player whose head (HEAD_M up) is at pixel uv: point_at inverted."""
     Q = ground(f, uv)
-    return ob.CT[:2] + (Q - ob.CT[:2]) * (ob.CT[2] - HEAD_M) / ob.CT[2]
+    CT = ob.camera_centre()
+    return CT[:2] + (Q - CT[:2]) * (CT[2] - HEAD_M) / CT[2]
 
 
 def ground(f, uv):

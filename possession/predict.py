@@ -34,7 +34,8 @@ from games import GAME, half_video_blocks, require, source_frames  # noqa: E402
 from baseline import HOME, AWAY, NOBODY, team_of_each_track, write_submission  # noqa: E402
 
 # Params (read by ballcv/stoppages.py)
-OUT_M = 0.5                          # ball this far past a line -> out of play
+BALL_D = 0.22                        # the ball's diameter (m): Law 2's 68-70 cm round
+OUT_M = BALL_D / 2                   # it is out when wholly over a line (Law 9): its centre a radius past
 RESUME_RISE = 0.5                    # m/s rise of the players' median speed that ends a stoppage (they resume)
 WHISTLE_CAP = 60 * 25                # a stoppage whistle holds at most this long without a resume signal
 SPEED_HALF = 25                      # players' median speed is averaged over +/- this many frames

@@ -12,7 +12,7 @@ On the public five minutes:
 
 | | macroF1 | spellF1 | possessions (truth: 17) |
 |---|---|---|---|
-| **Our possession rules** (submitted) | **0.974** | **0.827** | 13 |
+| **Our possession rules** (submitted) | **0.972** | **0.827** | 13 |
 | `baseline_smooth125` (the best published baseline) | 0.581 | 0.424 | 16 |
 
 The sections follow RULES.md: what we used and why it is inspectable, how the labels come from algorithms, what we
@@ -196,21 +196,21 @@ cannot be dead and live again at once.
 So a tagged corner whose ball we lost goes **corner tag → nobody running → players stopped**. The tag says a corner
 is coming, the stretch with nobody running says play had stopped before it, and the players' pace dropping picks the
 frame. A goal goes **whistle → ball in the goal**: the whistle says play stopped, and our ball crossing the goal
-line, a moment before it, dates the stop. Over the match, our 88 stoppages are timed by the ball leaving the pitch
-(41), a whistle (20), the players' pace (15), the flag (4), the ball in the goal (3), the broadcast (3), and the
+line, a moment before it, dates the stop. Over the match, our 89 stoppages are timed by the ball leaving the pitch
+(44), a whistle (20), the players' pace (13), the flag (3), the ball in the goal (3), the broadcast (4), and the
 referee's pip and the half's first frame (one each). The viewer shows each stoppage's chain, in order.
 
 **When play restarted** follows the same idea. Where the ball itself can be trusted, it decides: the placed ball
-struck, for a goal kick or a corner, or the kick after the referee's restart whistle, for a free kick. That covers 50
-of the 88 stoppages. Everywhere else, the players' pace rising out of its lull times the restart. A restart has to
+struck, for a goal kick or a corner, or the kick after the referee's restart whistle, for a free kick. That covers 46
+of the 89 stoppages. Everywhere else, the players' pace rising out of its lull times the restart. A restart has to
 lead to play: if play stops again within a few seconds, or before anyone ran, it was the same stoppage. **Who has
 the ball after** is the team named on the tag, or otherwise the team of the player at the ball when it restarts.
 
 **The flag is the weakest evidence we have.** The flag detector (`flag_self.py`) taught itself, like the others, but
 it has much less to learn from. The assistants raise their flags only a handful of times in a match, and we have no
-hand labels to measure the detector against. It reports 85 raises over the match. On the near touchline 15% of them
+hand labels to measure the detector against. It reports 92 raises over the match. On the near touchline 14% of them
 follow the ball going out, against 5% by chance, and on the far touchline none do. So a raise never makes a stoppage
-by itself. It only times an out that a tag or a set-up already says happened, and it does so for 4 of the 88.
+by itself. It only times an out that a tag or a set-up already says happened, and it does so for 3 of the 89.
 
 **Live play: the rules, which we submit** (`ownball.control_roles`, then `possession/predict.py`). Here too the
 evidence chains. A touch by the team not in possession says the ball *may* have changed hands. That team's next

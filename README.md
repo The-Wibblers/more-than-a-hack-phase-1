@@ -154,7 +154,7 @@ machine, it scores the same way on ours.
 Our entry, explained in **[writeup.md](writeup.md)** (the technical document). We find the ball, the players and the
 assistant referees in the tactical video ourselves, with detectors that teach themselves from the match (no hand
 labels). We call a touch where the ball's motion breaks at a player's body, and decide possession from the touches
-and the stoppages with rules. On the public five minutes it scores **macroF1 0.974 / spellF1 0.827**, against
+and the stoppages with rules. On the public five minutes it scores **macroF1 0.972 / spellF1 0.827**, against
 0.581 / 0.424 for the best published baseline.
 
 ```

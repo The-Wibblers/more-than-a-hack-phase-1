@@ -54,18 +54,16 @@ OUT_S = 20                 # an out is tagged within this many seconds of it
 TAG_LEAD_S = 5             # ... or up to this long before it
 TAG_RESTART_CAP_S = 10     # a tagged set piece is taken within seconds of its tag: a detected restart more than this
                            # long after it is a later strike we mismatched, not the restart -- the tag times it instead
-FLAG_LAG_S = 2             # the assistant raises the flag within this long of the ball going out
 DROP_S = 3                 # the fastest players' speed is compared over this long before and after
 FASTEST = 3                # ... the mean of the fastest this many
 RESUME_LAG = 30            # fallback only -- cmd_build MEASURES this each run (measure_resume_lag), so there is no
                            # tuned constant: the players' pace rising out of its lull after a restart we can time
                            # ourselves (ball struck from rest / a restart whistle). No ground truth.
-CORNER_SETUP_M, CORNER_SETUP_S = 2.5, 1   # a player this close to a corner for this long: a corner being taken
 OFF_PITCH_M, OFF_PITCH_S = 0.5, 2         # a player this far off the pitch over a touchline for this long: a throw-in
 SETUP_CLEAR_S = 30         # a set-up this close to a known stoppage is part of it; none this close to a half's end or
                            # after a kick-off (players leave the pitch, the kick-off is set up)
-GOAL_AREA = (5.5, 9.16)    # goal area: depth, half-width either side of the centre line (m) -- pitch markings
-BOX_HALF_W = 20.16         # the penalty area's half-width (m)
+GOAL_AREA = (ob.GOAL_AREA_M, ob.GOAL_W / 2 + ob.GOAL_AREA_M)   # goal area: depth, half-width (m) -- Law 1
+BOX_HALF_W = ob.BOX_HALF_W_M                                  # the penalty area's half-width (m)
 CORNER_M = 1.0             # corner arc radius (m)
 RUN_MS = 3.0               # a jog (m/s): play has players running; walking, as while a set piece is set up, is slower
 MARGIN_M = 1.0             # position error allowed around those markings
@@ -114,11 +112,11 @@ def setups(P, V, known, halves, kickoffs):
     to, also dead ball). Not within SETUP_CLEAR_S of a known stoppage (known), of a half's end or after a kick-off."""
     seen = np.isfinite(V)
     near = lambda a, b: np.minimum(a, b)
-    at_corner = seen & (np.hypot(near(P[..., 0], L - P[..., 0]), near(P[..., 1], W - P[..., 1])) < CORNER_SETUP_M)
+    at_corner = seen & (np.hypot(near(P[..., 0], L - P[..., 0]), near(P[..., 1], W - P[..., 1])) < CORNER_M + MARGIN_M)
     off_pitch = seen & (near(P[..., 1], W - P[..., 1]) < -OFF_PITCH_M) & (near(P[..., 0], L - P[..., 0]) > 0)
     clear = SETUP_CLEAR_S * 25
     out = []
-    for kind, m, hold in (('corner', at_corner, CORNER_SETUP_S), ('throw-in', off_pitch, OFF_PITCH_S)):
+    for kind, m, hold in (('corner', at_corner, PLACED_S), ('throw-in', off_pitch, OFF_PITCH_S)):
         run = np.zeros(m.shape[1], np.int32); prev = False
         for f in range(len(m)):
             run = np.where(m[f], run + 1, 0); now = bool((run >= hold * 25).any())
@@ -229,7 +227,7 @@ def cmd_build():
     still = lambda i: (lambda w: len(w) >= need / 2 and np.max(np.linalg.norm(G[w] - np.median(G[w], 0), axis=1)) < CONTACT_M)(
         [j for j in range(max(0, i - need + 1), i + 1) if fr[j] > fr[i] - need])
     speed5 = lambda i: (lambda j: np.linalg.norm(G[j] - G[i]) / (fr[j] - fr[i]) * 25 if j > i else 0.0)(
-        max([j for j in range(i, min(len(fr), i + 6)) if fr[j] <= fr[i] + 5]))
+        max([j for j in range(i, min(len(fr), i + ob.FIT_HALF + 1)) if fr[j] <= fr[i] + ob.FIT_HALF]))
     strikes = []
     for i, f in enumerate(fr[:-1]):
         if not still(i) or still(i + 1):
@@ -283,17 +281,12 @@ def cmd_build():
         if sg['kind'] == 'flight':
             flying[sg['f0']:sg['f1'] + 1] = True
     past = -np.minimum.reduce([G[:, 0], L - G[:, 0], G[:, 1], W - G[:, 1]])
-    # ... unless the assistant signals just after it (FLAG_LAG_S): they saw it go out
-    signalling = np.zeros(len(arc), bool)
-    for r in raised:
-        signalling[r['start']:r['end'] + 1] = True
-    confirmed = np.array([signalling[f:f + FLAG_LAG_S * 25 + 1].any() for f in fr])
-    sure = arc[fr] | ~flying[fr] | (G[:, 1] > W) | confirmed
+    sure = arc[fr] | ~flying[fr] | (G[:, 1] > W)
     exits, was_in = [], False
     for i in range(1, len(fr)):
         if past[i] < 0:
             was_in = True
-        elif (was_in and past[i - 1] > predict.OUT_M and past[i] > predict.OUT_M and fr[i] - fr[i - 1] <= 3
+        elif (was_in and past[i - 1] > predict.OUT_M and past[i] > predict.OUT_M and fr[i] - fr[i - 1] <= ob.FIT_HALF
               and sure[i - 1] and sure[i]):
             # ... and it stays out: a ball followed back onto the pitch within PLACED_S never left it (a dropping ball's
             # ground point runs in from past the line) -- followed, frame to frame no faster than a ball (VMAX_MPF): a
@@ -391,7 +384,7 @@ def cmd_build():
     # running then is not play)
     def in_goal(frs, P, ok):
         out = (np.minimum(P[:, 0], L - P[:, 0]) < -predict.OUT_M) & (np.abs(P[:, 1] - W / 2) <= BOX_HALF_W) & ok
-        return next((int(frs[i - 1]) for i in range(1, len(frs)) if out[i - 1] and out[i] and frs[i] - frs[i - 1] <= 3), None)
+        return next((int(frs[i - 1]) for i in range(1, len(frs)) if out[i - 1] and out[i] and frs[i] - frs[i - 1] <= ob.FIT_HALF), None)
     mframes = np.flatnonzero(np.isfinite(mball[:, 0]))
     goal_at = {}
     for g0, g1, scorer in goal_spans():
@@ -652,14 +645,14 @@ def cmd_build():
                                      ended_by='half-time', tag=None, timed_by='broadcast break', restart_team=None)],
                          key=lambda st: st['start'])
     # who takes the set piece: the player within reach of the ball when it restarts
-    team = ['H'] * 24 + ['A'] * 22
+    team = ['H' if t == 0 else 'A' for t in np.load(ob.S + 'tactical.npz')['team']]
     keepers = ob.keeper_slots()
     sides = ob.sides_by_half(P)
     for st in out:
         r, st['restart_team'] = st['restart'], st.pop('tag_team', st.get('restart_team'))
         if st['restart_team']:
             continue                                                          # the tag names the team
-        g0 = None if r is None else next((g for d in range(4) for g in (r - d, r + d) if g in track), None)
+        g0 = None if r is None else next((g for d in range(ob.FIT_HALF + 1) for g in (r - d, r + d) if g in track), None)
         if g0 is not None:
             # a throw-in: the thrower stands on the touchline (within MARGIN_M) -- the nearest player in reach who does,
             # else the nearest in reach

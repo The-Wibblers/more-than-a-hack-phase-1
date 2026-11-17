@@ -3,7 +3,7 @@
 Between contacts the ball is in one of two modes, each with known physics:
   roll    on the ground: a nearly constant velocity (friction slows it a little)
   flight  in the air under gravity: the point straight below it moves in a line, its height is a parabola
-The tactical camera turns about a fixed centre CT, so a ball at height h is seen at the ground point g where the ray
+The tactical camera turns about a fixed centre CT (ownball.camera_centre), so a ball at height h is seen at the ground point g where the ray
 from CT through the ball meets the pitch, and the point below the ball is B = g + (CT - g) h / CT_z. With g known
 from the pixel, a flight is LINEAR in its six unknowns (x0, y0, vx, vy, h0, vh), like a roll in its six
 (x0, y0, vx, vy, ax, ay): every candidate stretch is scored by weighted linear least squares.
@@ -27,7 +27,7 @@ import json, sys
 import numpy as np
 
 import ownball as ob
-from ownball import CT, G, L, W
+from ownball import camera_centre, G, L, W
 
 FPS = 25.0
 MAX_GAP = ob.MAX_SKIP      # a longer dropout splits the track into separate stretches
@@ -72,6 +72,7 @@ def rows(mode, t, g):
     if mode == 'roll':                                                     # g = x0 + v t + a t^2 / 2
         A[:, 0, 4] = A[:, 1, 5] = t * t / 2
     else:                                                                  # g = x0 + v t - k (h0 + vh t - G t^2 / 2)
+        CT = camera_centre()
         k = (CT[:2] - g) / CT[2]
         A[:, :, 4] = -k; A[:, :, 5] = -k * t[:, None]
         y = g - k * G * t[:, None] ** 2 / 2
@@ -133,6 +134,7 @@ def ground_at(seg, t):
     if seg['mode'] == 'roll':
         return np.array([th[0] + th[2] * t + th[4] * t * t / 2, th[1] + th[3] * t + th[5] * t * t / 2]), 0.0
     B = np.array([th[0] + th[2] * t, th[1] + th[3] * t]); h = th[4] + th[5] * t - G * t * t / 2
+    CT = camera_centre()
     return CT[:2] + (B - CT[:2]) * CT[2] / (CT[2] - h), float(h)
 
 

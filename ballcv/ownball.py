@@ -16,8 +16,7 @@ import numpy as np
 
 S = __import__('paths').S
 WORK = __import__('os').environ.get('OWNBALL_WORK') or S + 'fullmatch'   # candidates and track: the full match
-L, W = 105.3, 68.0
-CT = np.array([53.2, 115.5, 30.0])         # tactical camera centre
+L, W = __import__('paths').PITCH
 OUT_JSON = __import__('os').environ.get('TOUCHES_OUT') or __import__('paths').DATA + 'ballcv/BAR-ATH_touches.json'
 KIT_MODEL = __import__('os').environ.get('KIT_MODEL') or __import__('paths').MODELS + 'kit.pt'   # kit_team.py
 PLAYER_MODEL = __import__('os').environ.get('PLAYER_MODEL') or __import__('paths').MODELS + 'players.pt'   # player_det.py
@@ -28,10 +27,10 @@ TOP = 8                 # candidates kept per frame
 CAND_LOGIT = -1.0
 # linking
 REWARD_AT = 0.0         # a candidate adds (logit - REWARD_AT) to the path score
-SKIP_COST = 0.12        # per frame with no candidate on the path
+SKIP_COST = 0.1         # per frame with no candidate on the path
 MAX_SKIP = 12           # longest dropout bridged directly
 VMAX_MPF = 1.6          # fastest ball, metres (at the ball's ground scale) per frame (= 40 m/s)
-MOVE_COST = 0.04        # per metre moved (prefers the smoother of two otherwise equal paths)
+MOVE_COST = 0.05        # per metre moved (prefers the smoother of two otherwise equal paths)
 RESTART_COST = 2.5      # starting a new path segment anywhere (ball reappears after a long absence)
 # events
 FIT_HALF = 4            # frames each side used to find breaks in the ball's motion (touches 0.3 s apart stay separate)
@@ -57,11 +56,15 @@ LONG_M = 30.0
 STALE_FRAMES = 12      # a track whose position has not moved for this long is frozen (stale tracklet): it can't touch
 CLAIM_GAP_S = 1.0       # keeper claim: the ball vanishes for at least this long ...
 CLAIM_REACH_M = 2.0     # ... last seen within this distance of a goalkeeper ...
-BOX_DEPTH_M, BOX_HALF_W_M = 16.5, 20.16   # ... who is inside his own penalty area
+GOAL_W = 7.32           # ... who is inside his own penalty area. The markings, from Law 1 (m): the goal's width,
+BOX_DEPTH_M = 16.5      # the penalty area's depth, and as far again either side of the posts,
+BOX_HALF_W_M = GOAL_W / 2 + BOX_DEPTH_M
+GOAL_AREA_M = 5.5       # the goal area's depth, and as far again either side of the posts
 CLAIM_HOLD_S = 1.0      # keeper claim we DO see: the ball sits within CLAIM_HOLD_REACH_M of a goalkeeper in his own
 CLAIM_HOLD_REACH_M = 1.0  # box for this long (brief losses up to CLAIM_GAP_S bridged) -- a clean catch that never vanishes
 CATCH_REACH_M = 0.6     # a ball reaching a keeper's hands (he plucked it from the air): within this, right at him ...
 CATCH_GAP_S = 0.4       # ... then lost for even this short a time (less than CLAIM_GAP_S) is still a catch
+
 
 def H(M, f, g):
     """pixel map frame f -> frame g (exact for a fixed-centre camera)."""
@@ -80,8 +83,19 @@ def ppm(Mf, uv):
     return float((np.linalg.norm(b - a) + np.linalg.norm(c - a)) / 2)
 
 
+@__import__('functools').lru_cache(None)
+def camera_centre():
+    """The tactical camera's centre (m; the third value its height). The camera turns about one fixed point: the median,
+    over the match, of the centres its refined homographies imply (cameras.decompose; refine_h.py)."""
+    import cameras
+    C = cameras.decompose(np.load(S + 'homography_refined.npy'))[4]
+    x, y, z = np.nanmedian(C[np.isfinite(C).all(1)], 0)
+    return np.array([x, y, -z])                                              # decompose: z negative is up
+
+
 def column(Mf, G):
     """image segment (feet, top) of a player standing at ground point G (m)."""
+    CT = camera_centre()
     out = []
     for h in (0.0, BODY_H):
         Q = CT[:2] + (G - CT[:2]) * CT[2] / (CT[2] - h)
