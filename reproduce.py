@@ -1,7 +1,8 @@
 """The submission from the match data, in one command: every step in order, each skipped when its output is already
 there, so a stopped run carries on where it left off.
 
-  python reproduce.py            the committed models (ballcv/models/) on the match -> evaluation/results/possession_touches.csv
+  python reproduce.py            the committed models (ballcv/models/) on the match -> evaluation/results/possession_touches.csv,
+                                 and its copy for the submission form, submission/The Wibblers.csv
   python reproduce.py --train    train every model again from nothing first, then detect with the new models
 
   1. caches            the tracking as arrays                  ballcv/cache_tracking.py      -> data/ballcv/work/align/tactical.npz
@@ -12,6 +13,7 @@ there, so a stopped run carries on where it left off.
   6. players           detected, then tracked                  ballcv/player_det.py, player_track.py -> work/align/players/
   7. flags             the assistants' flags                   ballcv/flag_self.py signals   -> work/align/flags/
   8. possession        touches, stoppages, our rules, viewer   ballcv/run_match.py           -> evaluation/results/possession_touches.csv
+  9. submission        named after the team, validated                                       -> submission/The Wibblers.csv
 
 With --train, before step 5: the ball, kit, player, assistant and flag detectors (selftrain.py, kit_team.py,
 player_det.py, assistant_self.py, flag_self.py run), each copying its last model into ballcv/models/; then the
@@ -30,6 +32,8 @@ A, B = 11185, 190197                    # the match's two halves in the video
 N_FRAMES = 199319
 CHUNK = 10000                           # ball candidates are written a chunk at a time
 SIGNALS = f'{S}flags/signals_{A}_{B}.npz'
+RESULT = os.path.join(REPO, 'evaluation', 'results', 'possession_touches.csv')
+SUBMISSION = os.path.join(REPO, 'submission', 'The Wibblers.csv')   # SUBMISSION.md: the file is named after the team
 TRACKS = f'{S}players/tracks.npz'
 
 
@@ -71,4 +75,6 @@ if __name__ == '__main__':
     step(tracked, 'ballcv/player_track.py', 'run', A, B)
     step(os.path.exists(SIGNALS), 'ballcv/flag_self.py', 'signals', A, B)
     run('ballcv/run_match.py')
-    run('evaluation/validate_submission.py', os.path.join(REPO, 'evaluation', 'results', 'possession_touches.csv'))
+    os.makedirs(os.path.dirname(SUBMISSION), exist_ok=True)
+    shutil.copyfile(RESULT, SUBMISSION)
+    run('evaluation/validate_submission.py', SUBMISSION)

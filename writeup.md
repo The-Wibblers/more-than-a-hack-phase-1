@@ -338,7 +338,7 @@ detectors), so regenerating the submission needs no training:
 ```bash
 pip install -r requirements.txt          # Python 3.12; ffmpeg on the PATH
 # the match data unpacked into ./data (data/README.md)
-python reproduce.py                      # -> evaluation/results/possession_touches.csv, validated
+python reproduce.py                      # -> evaluation/results/possession_touches.csv and submission/The Wibblers.csv, validated
 python reproduce.py --train              # the same, after training every model again from nothing
 ```
 
@@ -355,6 +355,7 @@ on where it left off:
 | 6. the players: detected, then tracked | `ballcv/player_det.py detect`, `player_track.py run` | `work/align/players/` |
 | 7. the assistants' flags | `ballcv/flag_self.py signals` | `work/align/flags/` |
 | 8. touches, stoppages, possession, and the viewer's files | `ballcv/run_match.py` | `data/ballcv/*.json`, `evaluation/results/possession_touches.csv` |
+| 9. the submission, named after the team and validated | `reproduce.py` | `submission/The Wibblers.csv` |
 
 With `--train`, the five detectors are trained before step 5 (`selftrain.py`, `kit_team.py`, `player_det.py`,
 `assistant_self.py` and `flag_self.py`, each `run`). Each copies its last model into `ballcv/models/` and skips the
@@ -365,7 +366,9 @@ lives under `data/`, which is gitignored like the match data itself (`MTAH_DATA_
 `games.py` and `ballcv/paths.py` are the only places that spell out a path.
 
 ```
-evaluation/results/possession_touches.csv     the submission: our possession, one label per tactical frame
+submission/The Wibblers.csv                  the submission as uploaded: our possession, one label per tactical frame
+submission/The Wibblers.pdf                  this document as uploaded (python docs/make_pdf.py)
+evaluation/results/possession_touches.csv     the same labels, where evaluation/run_evaluation.py scores them
 ballcv/models/                                the trained detectors: ball, kit, players, assistants, flags (committed)
 data/
 ├─ tactical/                                  as provided (the video may keep its download name, ..._tactical-001.mp4)
@@ -398,89 +401,34 @@ be checked frame by frame.
 
 ## 6. The viewer: every frame, open to inspection
 
-We built a viewer (`viewer/`, a Next.js app) to check our work one frame at a time, and it is where we found most of
-the errors this document describes. Every frame of the tactical video has its own page, `/frame/<n>`, where `n` is
-also the submission's row. After `python reproduce.py`, `cd viewer && npm install && npm run dev` opens it at
-`localhost:3000`. It reads everything from `data/` and `evaluation/`, and a rerun shows up on the next page load.
+We built a viewer (`viewer/`, a Next.js app) to see how our models come together, one frame at a time. It is where we
+found most of the errors this document describes. Every frame of the tactical video has its own page, `/frame/<n>`,
+where `n` is also the submission's row. After `python reproduce.py`, `cd viewer && npm install && npm run dev` opens it
+at `localhost:3000`. It reads everything from `data/` and `evaluation/`, and a rerun shows up on the next page load.
 
 **In these screenshots the match picture is hidden**, because the data's licence does not let us publish frames of the
 video. In the viewer, everything drawn on black here sits on the video frame itself.
 
-### One page per frame
-
 ![The viewer's page for frame 11360](docs/viewer/interception_page.png)
 
-*Frame 11360, seven seconds into the match.* Along the top: the match clock, the ground truth (in the public
-window), our prediction with a check against it, the referee's last and next whistle, and the last ball played. The
-match bar below jumps anywhere; its marks are the whistles we hear in the broadcast audio. On the left are our players
-and our ball, drawn on the tactical picture through the refined homography, with the pitch lines as a check on it. On
-the right is the same moment from above, each player with his heading over the next second, and the two assistant
-referees on their touchlines. Below come the timeline, 30 s either side of now, and four panels: the touches around
-now, the players by distance to the ball, the homography, and the broadcast frame at the same instant.
+*One page per frame.* Along the top: the match clock, the ground truth (in the public window), our prediction with a
+check against it, the referee's last and next whistle, and the last ball played. The match bar below jumps anywhere;
+its marks are the whistles we hear in the broadcast audio. On the left are our players and our ball, drawn on the
+tactical picture through the refined homography, with the pitch lines as a check on it. On the right is the same
+moment from above, each player with his heading over the next second, and the two assistant referees on their
+touchlines. Below come the timeline and four panels: the touches around now, the players by distance to the ball, the
+homography, and the broadcast frame at the same instant.
 
 ![Our players and ball drawn on the tactical picture](docs/viewer/interception_overlay.png)
 
-### The timeline: a minute of play at a glance
-
-Each row of the timeline is one kind of evidence, so a stoppage can be read as the chain of section 3. From the top:
-the ground truth and our prediction, our stoppages with the evidence that found and timed each one, the set-piece and
-goal tags, the assistant's flag, the broadcast (live, or cut away to a close-up or replay), the referee's whistles,
-every touch (numbered by the player's slot, in his team's colour), who is on the ball, the ball's motion, and each ball
-played from one player to the next.
-
-![Timeline through an interception in the public window](docs/viewer/interception_timeline.png)
-
-*Live play in the public window.* Our prediction against the ground truth through two changes of possession: each
-change starts at the taking team's touch.
-
-![Timeline through a free kick](docs/viewer/whistle_timeline.png)
-
-*A free kick.* The referee's stoppage whistle starts the dead ball, and the players picking up their pace again end
-it. The ground truth's dead ball lines up with ours to within a fraction of a second at either end.
+*Our models on the picture.* The players from our detector and tracker, coloured by team, and our ball with its
+recent path, all placed through the refined homography.
 
 ![Timeline through a corner timed by the broadcast cutting away](docs/viewer/corner_cut_timeline.png)
 
-*A chain of evidence.* A corner whose ball we lost: the corner tag says play stopped, the broadcast cutting away says
-it had stopped by then, and the players' pace dropping, just before the cut, picks the frame.
-
-![Timeline through a goal kick timed by the players stopping](docs/viewer/goal_kick_timeline.png)
-
-*Another chain.* A goal kick: the tag, then a long stretch with nobody running, then the players' pace dropping. The
-dead ball ends when the placed ball is struck.
-
-![Timeline through a free kick timed by the referee's pip](docs/viewer/pip_timeline.png)
-
-*The referee's pip.* A whistle too short to stand alone times a stoppage that other evidence found.
-
-![Timeline through a throw-in found from the players setting it up](docs/viewer/throw_setup_timeline.png)
-
-*A stoppage nothing tagged.* A player standing over the touchline sets up a throw-in, the broadcast cuts away, and the
-players' pace dropping picks the frame.
-
-### The assistants and their flags
-
-![The near assistant with his flag up, from above](docs/viewer/flag_pitch.png)
-
-![Timeline through a throw-in timed by the flag](docs/viewer/flag_timeline.png)
-
-*The assistant's flag.* The near assistant raises his flag (the red square at his side, from above), and the raise
-times the throw-in that the tag then confirms.
-
-### Goals, keepers and duels
-
-![The viewer's page during a goal](docs/viewer/goal_page.png)
-
-*A goal.* In the picture (left), our ball's trail runs into the goal. The stoppage is timed by the ball in the goal,
-and lasts until the kick-off.
-
-![The viewer's page at a keeper's claim](docs/viewer/keeper_page.png)
-
-*A keeper's claim.* The touches panel marks the claim, and our prediction changes with it, as the ground truth does.
-
-![Our tracks in the far-touchline duel, on the picture](docs/viewer/duel_overlay.png)
-
-![Our tracks in the far-touchline duel, from above](docs/viewer/duel_pitch.png)
-
-*The duel of section 1.3.* At the far touchline, the home player that Metrica loses behind an away player is kept in
-place by our tracker, his marker just under his opponent's.
-
+*The timeline: a minute of play, one row per kind of evidence.* From the top: our prediction (and the ground truth in
+the public window), our stoppages with the chain that found and timed each, the set-piece and goal tags, the
+assistant's flag, the broadcast (live, or cut away), the referee's whistles, every touch (numbered by the player's
+slot, in his team's colour), who is on the ball, the ball's motion, and each ball played. Here a corner whose ball we
+lost is read as a chain: the corner tag says play stopped, the broadcast cutting away says it had stopped by then, and
+the players' pace dropping, just before the cut, picks the frame.

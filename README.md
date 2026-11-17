@@ -173,13 +173,15 @@ alignment/                    the broadcast's clock against the tactical one; th
 possession/
   predict.py                    the possession rules on our touches and stoppages (submitted)
 viewer/                       Next.js app to step through the match frame by frame (viewer/README.md)
+submission/                   what we upload: The Wibblers.csv (the labels) and The Wibblers.pdf (writeup.md)
+docs/                         the writeup's viewer screenshots, and make_pdf.py, which builds the PDF
 reproduce.py                  the submission from the match data, in one command
 ```
 
 The trained models are committed, so with the match data unpacked into `data/`:
 
 ```bash
-python reproduce.py                   # -> evaluation/results/possession_touches.csv (--train: retrain the models first)
+python reproduce.py                   # -> submission/The Wibblers.csv (--train: retrain the models first)
 python evaluation/run_evaluation.py
 cd viewer && npm install && npm run dev   # http://localhost:3000
 ```

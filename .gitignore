@@ -64,3 +64,5 @@ __pycache__/
 venv/
 env/
 .DS_Store
+# the technical document as uploaded (docs/make_pdf.py)
+!submission/The Wibblers.pdf
