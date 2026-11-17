@@ -1,7 +1,7 @@
 """Whose kit a tracked player is wearing, from the picture: a model that teaches itself, like selftrain.py's ball.
 
 Metrica's tracking names every slot's team, and mostly rightly -- but not always where it matters: in a duel a new
-track can start on the wrong team's player (slot 33 at 11405 was born an Athletic track on a Barcelona player, a second
+track can start on the wrong team's player (slot 33 at 11405 was born an away track on a home player, a second
 before the touch credited to it), and the goalkeeper tracks swap. The touch rule credits the nearest slot's team, so
 those mistakes become possession changes. The kit does not lie: four kits in this match, each team's outfield and
 goalkeeper one (CLASSES).
@@ -58,7 +58,7 @@ DEV = st.DEV
 M, _, _ = load_h('tactical')
 _t = np.load(ob.S + 'tactical.npz')
 P = _t['P'][..., :2]
-SLOT_TEAM = np.array([0] * 24 + [1] * 22)
+SLOT_TEAM = _t['team']                 # 0 home, 1 away: each slot's team in Metrica's metadata
 KEEPERS = ob.keeper_slots()
 STALE = ob.stale_mask(P)
 SIDES = ob.sides_by_half(P)

@@ -1,8 +1,8 @@
 """Metrica's players, kept on the picture: each of its 46 slots tracked on the player detector's players (player_det.py).
 
-Metrica loses players exactly where they matter: one hidden behind another. Barcelona #11 runs beside Athletic #35 from
+Metrica loses players exactly where they matter: one hidden behind another. Home #11 runs beside away #35 from
 ~11240, is lost behind him at ~11285, and is gone for ~120 frames while the two run down to the far-touchline duel;
-Metrica then starts a new slot -- an Athletic one, #33 -- on him. The detector sees him there, in Barcelona's kit.
+Metrica then starts a new slot -- an away one, #33 -- on him. The detector sees him there, in the home kit.
 
 One tracker, a frame at a time. Every slot is a track; a slot's place this frame is expected at
   Metrica's own position, when Metrica has him (live, not frozen), within POS_M (Metrica's error and the detector's)
@@ -19,7 +19,7 @@ POS_M of there and that offset); lost in the open, he coasts on his velocity, at
 or a match picks him up again. A team has eleven players: when it comes out with more, its hidden and coasting
 slots end, the one unseen longest first -- Metrica has found him again under another number.
 A slot the picture does not see, within POS_M of a teammate it does, is that teammate under a second number, and ends:
-Metrica sometimes carries one player on two numbers (Athletic #35 and the #33 it starts beside him above). Frames with no detections run (not in players/dets/) keep Metrica's positions.
+Metrica sometimes carries one player on two numbers (away #35 and the #33 it starts beside him above). Frames with no detections run (not in players/dets/) keep Metrica's positions.
 
   python ballcv/player_track.py run A B     -> players/tracks.npz: P as tactical.npz (normalised, NaN where nobody),
                                                src (0 none, 1 Metrica, 2 picture, 3 coasting); ownball.py events reads it
@@ -65,7 +65,7 @@ def allowed(n_slots, keepers):
         if s in keepers:
             ok[s, 2] = ok[s, 3] = True
         else:
-            ok[s, 0 if s < 24 else 1] = True
+            ok[s, 0 if ob.slot_teams()[s] == 'H' else 1] = True
     return ok
 
 

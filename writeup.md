@@ -184,7 +184,7 @@ cannot be dead and live again at once.
 |---|---|---|
 | Set-piece and goal tags (Metrica) | yes, and which restart, and who takes it | loosely: seconds off |
 | The referee's stoppage whistle | yes | to a fraction of a second |
-| Players setting up a restart (one at a corner arc, or off the pitch over a touchline) | yes: players leave the pitch only while the ball is dead | no |
+| Players setting up a restart (one at a corner arc, or off the pitch over a touchline) | a sign, when the players then pause: in play a player can run off the pitch or shield the ball at the corner flag | no |
 | Our ball crossing a line, and staying off the pitch | yes, if it is not in the air (`ball3d.py`) | to the frame |
 | Our ball seen in the goal, for a tagged goal | with the tag | to the frame |
 | The referee's pip (a whistle too short to stand alone) | no | yes, once something else says play stopped |

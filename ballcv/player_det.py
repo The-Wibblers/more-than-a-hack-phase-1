@@ -1,8 +1,8 @@
 """A player detector that teaches itself: every player's feet in a frame, and whose kit he wears.
 
 Metrica's tracking misses players, and mostly where it matters: all eleven of a team are tracked on only ~60% of
-live frames, and the ones missing are the hidden ones -- a Barcelona player marked from the camera side at the far
-touchline (11340-11430) has no track at all, so every touch there goes to the Athletic player in front of him. This
+live frames, and the ones missing are the hidden ones -- a home player marked from the camera side at the far
+touchline (11340-11430) has no track at all, so every touch there goes to the away player in front of him. This
 finds players in the picture itself: heatmaps of feet and of heads, a pair per kit (kit_team.CLASSES: each team's
 outfield and goalkeeper kit), like heatmap.py's ball heatmap.
 
@@ -462,7 +462,7 @@ def kit_counts(k):
 def kit_weights(upto):
     """Each kit's weight in the loss: its share of the seed's labels / its share of all labels of rounds 0..upto. The
     seed is the fair sample (Metrica and the kit model agreeing, both teams alike); a model surer of one kit labels
-    more of it, and unweighted, the next model would lean further that way (round 2: 74% Barcelona from a 50/50
+    more of it, and unweighted, the next model would lean further that way (round 2: 74% home from a 50/50
     seed). With no lean every weight is 1; keepers stay as rare as they are in the seed (one a team)."""
     seed = kit_counts(0)
     n = sum(kit_counts(k) for k in range(upto + 1))

@@ -4,7 +4,8 @@
      when play stopped -- a referee's stoppage whistle, our ball leaving the pitch, a goal, half-time -- until the
      restart it waits for (a throw-in, a goal kick, a corner, a free kick, a kick-off), or the players resuming. The
      team taking the restart has the ball from then on, until the touches say otherwise. Dead frames are D whatever
-     the tracking says: players carry the ball around during a stoppage, and the ground truth does not count it.
+     the tracking says: a dead ball is out of play (Law 9) and belongs to nobody (the challenge's D), however much
+     the players carry it around during a stoppage.
 
   2. Touches. Live frames take the team in controlled possession from our own ball tracker's touches
      (data/ballcv/BAR-ATH_touches.json: the ball's motion breaks at a player's body): an opponent's block or tackle
@@ -37,7 +38,8 @@ from baseline import HOME, AWAY, NOBODY, team_of_each_track, write_submission  #
 BALL_D = 0.22                        # the ball's diameter (m): Law 2's 68-70 cm round
 OUT_M = BALL_D / 2                   # it is out when wholly over a line (Law 9): its centre a radius past
 RESUME_RISE = 0.5                    # m/s rise of the players' median speed that ends a stoppage (they resume)
-WHISTLE_CAP = 60 * 25                # a stoppage whistle holds at most this long without a resume signal
+WHISTLE_CAP = 60 * 25                # the longest a whistle's stoppage is held with no sign of the players resuming: a
+                                     # minute, past the time most free kicks take (a longer stop is timed by their pace)
 SPEED_HALF = 25                      # players' median speed is averaged over +/- this many frames
 DATA_DIR = os.path.join(ROOT, "data")
 WHISTLES_CSV = os.path.join(DATA_DIR, "broadcast", "{game}_broadcast_whistles.csv")

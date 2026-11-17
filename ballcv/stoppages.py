@@ -5,7 +5,9 @@ That play stopped, and how it restarts: the match's set-piece tags (data/tactica
 corners, goal kicks, free kicks, kick-offs after a goal, with the team taking it where named); a stoppage whistle in
 the audio (a free kick); players setting up a
 restart where nothing else says play stopped (one standing at a corner: a corner; off the pitch over a touchline: a
-throw-in, a substitution, an injury seen to -- players leave the pitch only while the ball is dead).
+throw-in, a substitution, an injury seen to). A set-up is a sign of a dead ball, not proof -- a player can run off the
+pitch, or shield the ball at a corner flag, in play -- so it only stands as a stoppage where the players pause after
+it (paused_in), as they do for a restart.
 
 When it stopped: a half whose tracking starts before its kick-off, from its first frame; where nobody ran for longer
 than OUT_S before it (RUN_MS: live play has someone running), when the players stopped -- the referee's pip then (a
@@ -21,7 +23,8 @@ ground point of a ball in the air can lie past the far touchline or a goal line 
 after it vanished went out unseen, when the players eased off -- else when the fastest players eased off.
 
 When it restarted: where the ball is reliable -- a goal kick or a corner, the placed ball struck in its goal area or at
-its corner arc; a whistle's free kick, on the referee's restart whistle (the kick after it). Everywhere else the players
+its corner arc; a whistle's free kick, where the referee blows to restart it, on the kick after his whistle (he need not
+blow: a quick free kick is timed by the players). Everywhere else the players
 say it: their pace rises out of its lull just after the restart (RESUME_LAG; the whistle rule's resume) -- unless the
 ball then comes to rest and is struck from there: that placed ball is the restart.
 A restart puts the ball in play: if play stops again within PLACED_S of it, or before anyone ran (the fastest players
@@ -44,16 +47,17 @@ from ownball import L, W, CONTACT_M, BREAK_MS, PLACED_S
 
 sys.path[:0] = [os.path.join(__import__('paths').REPO, 'possession'), __import__('paths').REPO]
 import predict
+from baseline import team_names  # noqa: E402
 
 OUT_JSON = os.environ.get('STOPPAGES_OUT') or __import__('paths').DATA + 'ballcv/BAR-ATH_stoppages.json'
 TAGS = __import__('paths').TAGS
 TAG_KIND = {'Throw-in': 'throw-in', 'Corner Kick': 'corner', 'Goal Kick': 'goal kick', 'Free Kick': 'free kick',
             'Kick Off (After Goal)': 'kick-off'}
-TAG_TEAM = {'Barcelona': 'H', 'Atletic Club': 'A'}
+TAG_TEAM = dict(zip(team_names(__import__('paths').ATD_XML), 'HA'))   # the tags name the clubs: home, away (metadata)
 OUT_S = 20                 # an out is tagged within this many seconds of it
 TAG_LEAD_S = 5             # ... or up to this long before it
-TAG_RESTART_CAP_S = 10     # a tagged set piece is taken within seconds of its tag: a detected restart more than this
-                           # long after it is a later strike we mismatched, not the restart -- the tag times it instead
+TAG_RESTART_CAP_S = 10     # Metrica tags a set piece as it is being taken, so it is taken within seconds of its tag: a
+                           # placed ball struck more than this long after the tag is a later one, not this restart
 DROP_S = 3                 # the fastest players' speed is compared over this long before and after
 FASTEST = 3                # ... the mean of the fastest this many
 RESUME_LAG = 30            # fallback only -- cmd_build MEASURES this each run (measure_resume_lag), so there is no
@@ -63,7 +67,10 @@ OFF_PITCH_M, OFF_PITCH_S = 0.5, 2         # a player this far off the pitch over
 SETUP_CLEAR_S = 30         # a set-up this close to a known stoppage is part of it; none this close to a half's end or
                            # after a kick-off (players leave the pitch, the kick-off is set up)
 GOAL_AREA = (ob.GOAL_AREA_M, ob.GOAL_W / 2 + ob.GOAL_AREA_M)   # goal area: depth, half-width (m) -- Law 1
-BOX_HALF_W = ob.BOX_HALF_W_M                                  # the penalty area's half-width (m)
+CROSSBAR_M = 2.44          # the crossbar's height (m) -- Law 1
+WHISTLE_KICK_S = 3         # the kick follows the referee's restart whistle within this long
+LULL_S, REACT_S = 0.5, 4   # measure_resume_lag: the players' lull is their lowest over this long before a restart, and
+MIN_RESTARTS = 8           # they pick up within REACT_S of it; the median over at least this many restarts
 CORNER_M = 1.0             # corner arc radius (m)
 RUN_MS = 3.0               # a jog (m/s): play has players running; walking, as while a set piece is set up, is slower
 MARGIN_M = 1.0             # position error allowed around those markings
@@ -109,7 +116,9 @@ def half_kickoffs():
 def setups(P, V, known, halves, kickoffs):
     """[(frame, restart kind)]: players setting up a restart where nothing else says play stopped -- a player standing
     at a corner (a corner), or off the pitch over a touchline (a throw-in; or a substitution or an injury being seen
-    to, also dead ball). Not within SETUP_CLEAR_S of a known stoppage (known), of a half's end or after a kick-off."""
+    to, also dead ball). Signs, not proof (a player runs off the pitch, or shields the ball at a corner flag, in play):
+    a set-up stands only where the players then pause (paused_in). Not within SETUP_CLEAR_S of a known stoppage
+    (known), of a half's end or after a kick-off."""
     seen = np.isfinite(V)
     near = lambda a, b: np.minimum(a, b)
     at_corner = seen & (np.hypot(near(P[..., 0], L - P[..., 0]), near(P[..., 1], W - P[..., 1])) < CORNER_M + MARGIN_M)
@@ -178,21 +187,21 @@ def eased_off(fastest, lo, hi):
     return max(range(lo, hi + 1), key=lambda f: mean(f - k, f) - mean(f, f + k))
 
 
-def measure_resume_lag(speed, events, default=30):
+def measure_resume_lag(speed, events, default=RESUME_LAG):
     """Frames from a restart we can time ourselves -- a ball struck from rest, or a restart whistle -- to the players'
     median speed rising RESUME_RISE out of its pre-restart lull: their reaction-and-acceleration lag, median over those
     restarts. No ground truth; falls back to `default` if too few restarts are clear."""
     lags = []
     for e in sorted(set(events)):
-        if e < 25 or e + 100 >= len(speed):
+        if e < 25 or e + REACT_S * 25 >= len(speed):
             continue
-        lull = np.nanmin(speed[e - 12:e + 1])
+        lull = np.nanmin(speed[e - round(LULL_S * 25):e + 1])
         if not np.isfinite(lull) or lull >= RUN_MS:                # players already moving: not a restart from rest
             continue
-        rf = next((f for f in range(e, e + 100) if np.isfinite(speed[f]) and speed[f] > lull + predict.RESUME_RISE), None)
+        rf = next((f for f in range(e, e + REACT_S * 25) if np.isfinite(speed[f]) and speed[f] > lull + predict.RESUME_RISE), None)
         if rf is not None:
             lags.append(rf - e)
-    return int(np.median(lags)) if len(lags) >= 8 else default
+    return int(np.median(lags)) if len(lags) >= MIN_RESTARTS else default
 
 
 def cmd_build():
@@ -303,8 +312,9 @@ def cmd_build():
             jumped = i >= 2 and not gone and np.linalg.norm(G[i - 1] - G[i - 2]) > ob.VMAX_MPF * (fr[i - 1] - fr[i - 2])
             # ... and it did not fly on: a ball back in play after an out was held first (a throw-in) or placed (a goal
             # kick, a corner) -- moving at BREAK_MS or more from each sighting past the line to the next, until it is
-            # seen on the pitch again, it never stopped: a ball in the air over the line (its ground point runs out
-            # and back), however long unseen
+            # seen on the pitch again, it never stopped. That is a ball in the air whose ground point runs out and back:
+            # in the air over the line it would be out (Law 9), but where it is in the air one camera cannot say (its
+            # ground point is not under it), so it is not taken for an out
             j = next((j for j in range(i + 1, len(fr)) if past[j] < 0), None)
             flew_on = (not back and j is not None and fr[j] - fr[i] <= OUT_S * 25
                        and all(BREAK_MS / 25 <= np.linalg.norm(G[k + 1] - G[k]) / (fr[k + 1] - fr[k]) <= ob.VMAX_MPF
@@ -330,8 +340,9 @@ def cmd_build():
     def restart_of(kind, s, earliest, limit, rw, back=None):
         """the restart we can see: a goal kick or a corner, the placed ball struck in its goal area or at its corner arc;
         a throw-in, the held ball struck from the body of a player on a touchline (within MARGIN_M: the thrower; held
-        overhead, its ground point lies metres inside the line); a stoppage whistle's free kick, on the referee's restart
-        whistle (the kick after it). Else None: the players resuming ends it."""
+        overhead, its ground point lies metres inside the line); a stoppage whistle's free kick, where the referee blows
+        to restart it (the kick after his whistle -- he need not, Law 13: a quick free kick has none). Else None: the
+        players resuming ends it."""
         if kind == 'throw-in':
             on_line = lambda f, d: any(np.isfinite(P[f, k, 1]) and min(P[f, k, 1] * W, W - P[f, k, 1] * W) <= MARGIN_M
                                        for dist, k, *_ in ob.bodies(M, P, f, track[f][:2]) if dist <= d)
@@ -378,12 +389,22 @@ def cmd_build():
     starts = [(a, 'half start', 'kick-off', tm) for a, (_t, tm) in kickoff_tag.items()]
     # a goal (tagged, with the kick-off after it): dead from the ball going in -- first seen past a goal line within the
     # goal's span, as for an out (by OUT_M on two tracked frames in a row), by our ball (not in flight: the ground point
-    # of a cross in the air runs past the line) or Metrica's, whichever is first: inside the penalty area's width (a ball in the air into the goal has
-    # its ground point well off to the side of the posts; not out by the corner flag) -- else from the players easing
+    # of a cross in the air runs past the line) or Metrica's, whichever is first: in the goal mouth as the camera sees it
+    # (goal_mouth: a ball in the air into the goal has its ground point off to the side of the posts) -- else from the
+    # players easing
     # off over the span, until that kick-off; before anything else in between (a review, the celebrations: players
     # running then is not play)
+    def goal_mouth():
+        """(lo, hi) across the pitch (m) where the ground point of a ball in the goal lies: between the posts, from the
+        ground up to the crossbar, as seen from the camera (ownball.camera_centre: the higher the ball, the further its
+        ground point from the camera)."""
+        C = ob.camera_centre()
+        ys = [(C[:2] + (np.array([x, y]) - C[:2]) * C[2] / (C[2] - h))[1] for x in (0, L)
+              for y in (W / 2 - ob.GOAL_W / 2, W / 2 + ob.GOAL_W / 2) for h in (0, CROSSBAR_M)]
+        return min(ys), max(ys)
+    mouth = goal_mouth()
     def in_goal(frs, P, ok):
-        out = (np.minimum(P[:, 0], L - P[:, 0]) < -predict.OUT_M) & (np.abs(P[:, 1] - W / 2) <= BOX_HALF_W) & ok
+        out = (np.minimum(P[:, 0], L - P[:, 0]) < -predict.OUT_M) & (P[:, 1] >= mouth[0]) & (P[:, 1] <= mouth[1]) & ok
         return next((int(frs[i - 1]) for i in range(1, len(frs)) if out[i - 1] and out[i] and frs[i] - frs[i - 1] <= ob.FIT_HALF), None)
     mframes = np.flatnonzero(np.isfinite(mball[:, 0]))
     goal_at = {}
@@ -447,8 +468,8 @@ def cmd_build():
                 cap = ko_tag + TAG_LEAD_S * 25 if kind == 'kick-off' else s + predict.WHISTLE_CAP   # a kick-off: by its tag --
                 if (kind == 'kick-off' and rw is not None and rw > cap
                         and all(pace_from(f) < RUN_MS for f in range(ko_tag, rw - kd))):
-                    cap = rw + 3 * 25                    # or on his whistle after it, while the players still wait (RUN_MS)
-                limit = min(b, cap, next((w for w in whistles if w > since), b), rw + 25 * 3 if rw else b)
+                    cap = rw + WHISTLE_KICK_S * 25       # or on his whistle after it, while the players still wait (RUN_MS)
+                limit = min(b, cap, next((w for w in whistles if w > since), b), rw + WHISTLE_KICK_S * 25 if rw else b)
                 # the restart comes after the out: after the assistant lowers the flag, and not within PLACED_S
                 earliest = max(s + int(PLACED_S * 25), flag_down.get(s, s) + 1 if how == 'assistant flag' else 0)
                 if kind == 'kick-off':                                            # only the kick-off restarts it: not before
@@ -492,7 +513,7 @@ def cmd_build():
     out = stoppages_of(events)
     # the referee restarts a dead ball: his 'restart' whistle (players a little quicker after it) in what we have as
     # live play stopped it -- a stoppage whistle, then
-    live = [r for r in restart_whistles if half_of(r) and not any(st['start'] <= r <= st['restart'] + 3 * 25
+    live = [r for r in restart_whistles if half_of(r) and not any(st['start'] <= r <= st['restart'] + WHISTLE_KICK_S * 25
                                                                    for st in out)]
     if live:
         whistles = sorted(whistles + live)
@@ -566,7 +587,7 @@ def cmd_build():
                     rw = next((r for r in restart_whistles if g - kd <= r <= g + kd), None)
                     replayed = any(f <= t0 < g for t0 in replay_end)
                     if rw is not None or replayed:
-                        restart = (next((k for k in strikes if rw <= k <= rw + 3 * 25), rw) if rw is not None
+                        restart = (next((k for k in strikes if rw <= k <= rw + WHISTLE_KICK_S * 25), rw) if rw is not None
                                    else max((k for k in strikes if g - kd <= k <= g + kd), default=g))
                         out.append(dict(start=int(s), end=int(restart - 1), cause='replay' if replayed else 'restart whistle',
                                         waits_for='restart', restart=int(restart), tag=None, timed_by=how, tag_team=None,

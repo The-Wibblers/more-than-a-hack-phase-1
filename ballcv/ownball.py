@@ -30,6 +30,7 @@ REWARD_AT = 0.0         # a candidate adds (logit - REWARD_AT) to the path score
 SKIP_COST = 0.1         # per frame with no candidate on the path
 MAX_SKIP = 12           # longest dropout bridged directly
 VMAX_MPF = 1.6          # fastest ball, metres (at the ball's ground scale) per frame (= 40 m/s)
+SAME_BALL_M = 3.0       # fits either side of a frame further apart than this are of two different balls
 MOVE_COST = 0.05        # per metre moved (prefers the smoother of two otherwise equal paths)
 RESTART_COST = 2.5      # starting a new path segment anywhere (ball reappears after a long absence)
 # events
@@ -244,9 +245,15 @@ def stale_mask(P):
     return out
 
 
+@__import__('functools').lru_cache(None)
+def slot_teams():
+    """'H' | 'A' for each of Metrica's track slots, as its metadata assigns them (cache_tracking.py)."""
+    return np.array(['H' if k == 0 else 'A' for k in np.load(S + 'tactical.npz')['team']])
+
+
 def goal_sides(P, frames):
     """{team: 'left'|'right'} -- the end each team defends, from where its players stand over these frames."""
-    xs = {'H': P[frames, :24, 0], 'A': P[frames, 24:, 0]}
+    xs = {k: P[frames][:, slot_teams() == k, 0] for k in 'HA'}
     med = {k: np.nanmedian(v) for k, v in xs.items()}
     return {'H': 'left', 'A': 'right'} if med['H'] < med['A'] else {'H': 'right', 'A': 'left'}
 
@@ -287,9 +294,9 @@ def box_team(g, sides):
 
 
 def keeper_team(P, f, s, sides):
-    """A goalkeeper track belongs to the team defending the half he is in -- keepers do not cross halfway, while
-    Metrica's keeper tracks do swap (#46 follows the HOME keeper at times, a frozen track drifts) -- not to his slot's.
-    sides: sides_by_half(P)."""
+    """A goalkeeper track belongs to the team defending the half he is in, not to his slot's: Metrica's keeper tracks
+    swap (#46 follows the HOME keeper at times, a frozen track drifts), and a keeper all but never plays in the other
+    half (the rare one up for a last-minute corner would be given to the other team). sides: sides_by_half(P)."""
     return next(t for t, sd in sides(f).items() if sd == ('left' if P[f, s, 0] * L < L / 2 else 'right'))
 
 
@@ -465,7 +472,7 @@ def kit_at(dets, fr_g, G, f, sides, grass, ball=None):
     """A break nobody tracked is at: the player the tracking does not have (Metrica can keep a keeper in his box, or
     hold a player metres off) is still in the picture, in his team's kit (player_det.py) -- the nearest within
     MAX_REACH_M of the ball, over the break's fit (FIT_HALF frames up to it). A keeper's kit, which one player wears:
-    seen once in the frame, in his own half (keepers do not cross halfway). An outfield kit: where the ball is on the
+    seen once in the frame, in his own half (a keeper all but never plays in the other). An outfield kit: where the ball is on the
     grass (grass), since a ball in the air has its ground point away from it. The ball where both cameras put it (ball,
     broadcast_check.py) when they do, else its ground point. -> (team, distance m, keeper?), or None."""
     for g in range(f, f - FIT_HALF - 1, -1):
@@ -521,11 +528,11 @@ def window_breaks(M, track, f0, f1):
         if left is None or right is None:
             continue
         pos = track[f][:2] if f in track else (left[0] + right[0]) / 2
-        if np.linalg.norm(left[0] - right[0]) / ppm(M[f], pos) > 3.0:     # the two sides are not the same ball
+        if np.linalg.norm(left[0] - right[0]) / ppm(M[f], pos) > SAME_BALL_M:     # not the same ball
             continue
         dv[f] = (np.linalg.norm(right[1] - left[1]) / ppm(M[f], pos) * 25.0, pos, left[1], right[1])
     peaks = sorted(f for f, (d, *_r) in dv.items()
-                   if d >= BREAK_MS and not any(dv.get(g, (0,))[0] > d for g in range(f - 4, f + 5) if g != f))
+                   if d >= BREAK_MS and not any(dv.get(g, (0,))[0] > d for g in range(f - FIT_HALF, f + FIT_HALF + 1) if g != f))
     # time each break at the first frame already on the outgoing path
     breaks, shifts = [], []
     for b in peaks:
@@ -600,7 +607,7 @@ def cmd_events():
     z = np.load(PLAYER_TRACKS); P = z['P']   # Metrica's slots kept on the picture (player_track.py): its lost and hidden players back in place
     src = z['src']                           # where each slot's place came from (1: Metrica alone, 2: the picture)
     print(f'players: player_track.py over {z["frames"][0]}-{z["frames"][1]}, Metrica elsewhere', flush=True)
-    team = ['H'] * 24 + ['A'] * 22
+    team = slot_teams()
     track = {int(k): np.array(v) for k, v in json.load(open(WORK + '/track.json')).items()}
     fs = sorted(track); f0, f1 = fs[0], fs[-1]
     global STALE, KEEPERS
@@ -697,7 +704,7 @@ def cmd_events():
     print(f'{len(flew)} head-height touches dropped: the ball flew past (Metrica straight through)')
     merged = []
     for e in events:
-        if merged and e['kind'] == 'touch' and merged[-1]['kind'] == 'touch' and e['slot'] and merged[-1]['slot'] == e['slot'] and e['f'] - merged[-1]['f'] <= 8:
+        if merged and e['kind'] == 'touch' and merged[-1]['kind'] == 'touch' and e['slot'] and merged[-1]['slot'] == e['slot'] and e['f'] - merged[-1]['f'] <= 2 * FIT_HALF:
             continue
         merged.append(e)
     touches = [e for e in merged if e['kind'] == 'touch']
