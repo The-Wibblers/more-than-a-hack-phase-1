@@ -55,8 +55,9 @@ TAG_LEAD_S = 5             # ... or up to this long before it
 FLAG_LAG_S = 2             # the assistant raises the flag within this long of the ball going out
 DROP_S = 3                 # the fastest players' speed is compared over this long before and after
 FASTEST = 3                # ... the mean of the fastest this many
-RESUME_LAG = 23             # the players' pace rises this many frames (0.9 s) after the restart (measured on the
-                           # ground truth's restarts and the verified throw-ins)
+RESUME_LAG = 30            # fallback only -- cmd_build MEASURES this each run (measure_resume_lag), so there is no
+                           # tuned constant: the players' pace rising out of its lull after a restart we can time
+                           # ourselves (ball struck from rest / a restart whistle). No ground truth.
 CORNER_SETUP_M, CORNER_SETUP_S = 2.5, 1   # a player this close to a corner for this long: a corner being taken
 OFF_PITCH_M, OFF_PITCH_S = 0.5, 2         # a player this far off the pitch over a touchline for this long: a throw-in
 SETUP_CLEAR_S = 30         # a set-up this close to a known stoppage is part of it; none this close to a half's end or
@@ -177,7 +178,25 @@ def eased_off(fastest, lo, hi):
     return max(range(lo, hi + 1), key=lambda f: mean(f - k, f) - mean(f, f + k))
 
 
+def measure_resume_lag(speed, events, default=30):
+    """Frames from a restart we can time ourselves -- a ball struck from rest, or a restart whistle -- to the players'
+    median speed rising RESUME_RISE out of its pre-restart lull: their reaction-and-acceleration lag, median over those
+    restarts. No ground truth; falls back to `default` if too few restarts are clear."""
+    lags = []
+    for e in sorted(set(events)):
+        if e < 25 or e + 100 >= len(speed):
+            continue
+        lull = np.nanmin(speed[e - 12:e + 1])
+        if not np.isfinite(lull) or lull >= RUN_MS:                # players already moving: not a restart from rest
+            continue
+        rf = next((f for f in range(e, e + 100) if np.isfinite(speed[f]) and speed[f] > lull + predict.RESUME_RISE), None)
+        if rf is not None:
+            lags.append(rf - e)
+    return int(np.median(lags)) if len(lags) >= 8 else default
+
+
 def cmd_build():
+    global RESUME_LAG
     from cameras import load_h
     M, _, _ = load_h('tactical')
     track = {int(k): np.array(v) for k, v in json.load(open(ball3d.FULL + '/track.json')).items()}
@@ -241,6 +260,8 @@ def cmd_build():
     whistles = sorted(int(w) for w in stops if half_of(w))
     _stops, restart_whistles = predict.read_whistles(predict.WHISTLES_CSV.format(game=predict.GAME))
     restart_whistles = sorted(int(r) for r in restart_whistles)
+    RESUME_LAG = measure_resume_lag(speed, strikes + restart_whistles)
+    print(f'resume lag, measured on our own restarts: {RESUME_LAG} frames ({RESUME_LAG / 25:.2f} s)', flush=True)
     tac = np.load(ob.S + 'tactical.npz')['P']; spd = tac[..., 2]
     fastest = np.nanmean(-np.sort(-np.nan_to_num(spd, nan=-1), 1)[:, :FASTEST], 1)
     kd = DROP_S * 25
