@@ -46,7 +46,7 @@ sys.path[:0] = [os.path.join(__import__('paths').REPO, 'possession'), __import__
 import predict
 
 OUT_JSON = os.environ.get('STOPPAGES_OUT') or __import__('paths').DATA + 'ballcv/BAR-ATH_stoppages.json'
-TAGS = __import__('paths').DATA + 'tactical/BAR-ATH_tactical_smart_tagging.xml'
+TAGS = __import__('paths').TAGS
 TAG_KIND = {'Throw-in': 'throw-in', 'Corner Kick': 'corner', 'Goal Kick': 'goal kick', 'Free Kick': 'free kick',
             'Kick Off (After Goal)': 'kick-off'}
 TAG_TEAM = {'Barcelona': 'H', 'Atletic Club': 'A'}
@@ -383,7 +383,7 @@ def cmd_build():
     starts += [(at, 'goal', 'kick-off', kicks) for at, (_ko, _how, kicks) in goal_at.items()]
     # the broadcast cutting away to replays for longer than OUT_S: nobody misses that much live play -- a stoppage
     import csv
-    rows = [r for r in csv.DictReader(open(__import__('paths').DATA + 'broadcast/BAR-ATH_broadcast_to_tactical.csv'))]
+    rows = [r for r in csv.DictReader(open(__import__('paths').ALIGNMENT))]
     replay_end, i = {}, 0
     while i < len(rows):
         if rows[i]['kind'] in ('replay', 'wipe'):
@@ -614,7 +614,7 @@ def cmd_build():
     # tactical frame before the break to the end of that half, no restart -- the next half starts at its kick-off. A
     # stoppage still open then (the whistle that ended the half) is the half-time itself
     import csv
-    rows = [r for r in csv.DictReader(open(__import__('paths').DATA + 'broadcast/BAR-ATH_broadcast_to_tactical.csv'))]
+    rows = [r for r in csv.DictReader(open(__import__('paths').ALIGNMENT))]
     for i in range(1, len(rows)):
         if rows[i]['kind'] == 'break' and rows[i - 1]['kind'] != 'break':
             last = next((int(float(rows[j]['tactical_frame'])) for j in range(i - 1, -1, -1) if rows[j]['tactical_frame']), None)

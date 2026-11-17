@@ -29,8 +29,8 @@ import refine_h
 
 L, W = ob.L, ob.W
 REPO = __import__('paths').REPO
-VIDEO = __import__('paths').DATA + 'broadcast/BAR-ATH_broadcast.mp4'
-ALIGN = __import__('paths').DATA + 'broadcast/BAR-ATH_broadcast_to_tactical.csv'
+VIDEO = __import__('paths').BROADCAST_VIDEO
+ALIGN = __import__('paths').ALIGNMENT
 CACHE = ob.S + 'broadcast_ball3d.json'
 CAMERA_FRAMES = 5                 # each camera's centre and focal length: the median over this many frames either side
 

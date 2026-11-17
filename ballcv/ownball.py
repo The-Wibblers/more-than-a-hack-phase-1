@@ -243,7 +243,7 @@ def sides_by_half(P):
     return lambda f: min(halves, key=lambda h: 0 if h[0] <= f <= h[1] else min(abs(f - h[0]), abs(f - h[1])))[2]
 
 
-ATD_XML = __import__('paths').DATA + 'tactical/BAR-ATH_tactical_atd.xml'
+ATD_XML = __import__('paths').ATD_XML
 
 
 def keeper_slots():

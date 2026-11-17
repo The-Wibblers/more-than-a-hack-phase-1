@@ -153,9 +153,9 @@ machine, it scores the same way on ours.
 
 Our entry, explained in **[writeup.md](writeup.md)** (the technical document). We find the ball, the players and the
 assistant referees in the tactical video ourselves, with detectors that teach themselves from the match (no hand
-labels). We call a touch where the ball's motion breaks at a player's body, and decide possession from the touches.
-On the public five minutes it scores **macroF1 0.970 / spellF1 0.827**, against 0.581 / 0.424 for the best
-published baseline.
+labels). We call a touch where the ball's motion breaks at a player's body, and decide possession from the touches
+and the stoppages with rules. On the public five minutes it scores **macroF1 0.974 / spellF1 0.827**, against
+0.581 / 0.424 for the best published baseline.
 
 ```
 ballcv/                       the ball, players, kits and officials in the tactical video; touches; stoppages
@@ -167,20 +167,24 @@ ballcv/                       the ball, players, kits and officials in the tacti
   assistant_self.py, flag_self.py  the assistant referees and their flags
   broadcast_check.py            the ball in 3D from the broadcast camera too, where one camera cannot tell bounce from touch
   stoppages.py                  dead balls: when play stopped, the restart, who takes it
-  run_match.py                  everything after the models, in order, to the submission file
+  paths.py                      where every file the pipeline reads and writes lives
+  run_match.py                  everything after the detections, in order, to the submission file
 alignment/                    the broadcast's clock against the tactical one; the referee's whistle in its audio
 possession/
   predict.py                    the possession rules on our touches and stoppages (submitted)
 viewer/                       Next.js app to step through the match frame by frame (viewer/README.md)
+reproduce.py                  the submission from the match data, in one command
 ```
 
-The full sequence of commands is in [writeup.md](writeup.md#6-reproduction). Once the models are trained:
+The trained models are committed, so with the match data unpacked into `data/`:
 
 ```bash
-python ballcv/run_match.py            # -> evaluation/results/possession_touches.csv
+python reproduce.py                   # -> evaluation/results/possession_touches.csv (--train: retrain the models first)
 python evaluation/run_evaluation.py
 cd viewer && npm install && npm run dev   # http://localhost:3000
 ```
+
+The steps, and where every file they write lives, are in [writeup.md](writeup.md#6-reproduction).
 
 ---
 

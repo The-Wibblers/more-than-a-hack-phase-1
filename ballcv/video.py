@@ -2,7 +2,7 @@
 import subprocess, sys
 import numpy as np
 
-VIDEO = __import__('paths').DATA + 'tactical/BAR-ATH_tactical-001.mp4'
+VIDEO = __import__('paths').TACTICAL_VIDEO
 FW, FH = 1920, 1080
 
 

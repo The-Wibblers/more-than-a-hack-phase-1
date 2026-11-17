@@ -3,10 +3,10 @@
 **More than a Hack 2027, Phase 1: technical document.**
 
 We answer the question from the picture rather than from the provided ball. We find the ball, the players and the
-assistant referees in the tactical video ourselves, with detectors that teach themselves from the match, without a
-single hand label. A *touch* is a break in the ball's motion at a player's body. Possession is decided from the
-sequence of touches, and dead balls from set-piece tags, the referee's whistle, the ball leaving the pitch and the
-players' pace.
+assistant referees in the tactical video ourselves, with detectors that teach themselves from the match, **without a
+single hand label** (section 2 walks through a training run). A *touch* is a break in the ball's motion at a player's
+body. Possession is decided from the sequence of touches, and dead balls from set-piece tags, the referee's
+whistle, the ball leaving the pitch and the players' pace.
 
 On the public five minutes:
 
@@ -16,7 +16,7 @@ On the public five minutes:
 | `baseline_smooth125` (the best published baseline) | 0.581 | 0.424 | 16 |
 
 The sections follow RULES.md: what we used and why it is inspectable, how the labels come from algorithms, what we
-did with the ground truth, how we replaced the provided data, the possession rules, reproduction, and limitations.
+did with the ground truth, how we replaced the provided data, the possession rules, and reproduction.
 
 ---
 
@@ -43,9 +43,10 @@ in section 4 was already good enough for possession.
 
 ## 2. The labels must come from an algorithm
 
-The submitted file is written by `ballcv/run_match.py` from the models' outputs. No person labels or corrects
-anything, and **no hand-labelled data is used to train or to validate any model**. RULES.md would allow a little for
-training or validation; we built none.
+**No hand labels were used anywhere in the pipeline: none to train a model, none to validate one.** Nobody marked a
+ball, a player, a kit, a flag or a touch on a single frame. The submitted file is written by `ballcv/run_match.py` from
+the models' outputs, and nothing in it was corrected by a person. The only labels we ever looked at are the
+organisers' public five minutes, as a final check (section 3).
 
 Each detector **teaches itself** the same way:
 
@@ -65,6 +66,42 @@ Each detector **teaches itself** the same way:
 | Players (`player_det.py`) | Metrica's player alone in the picture **and** the kit model reading his slot's kit | found 98.0%, 0.48 extra detections a frame, a team over eleven on 4.5% of frames |
 | Assistants (`assistant_self.py`) | lime shirt and socks on the touchline **and** level with the offside line from the tracking | the seed's held-out assistants; agreement with the offside line |
 | Flags (`flag_self.py`) | one flag-sized orange-red patch in the assistant's hand, moving with him over neighbouring frames | found, steadiness, and raised flags while play is on |
+
+**A training run, step by step: the ball detector** (`python ballcv/selftrain.py run`). The numbers are from the
+run that made the committed `ballcv/models/ball.pt` (`self/rounds.csv` and each round's `log.csv`).
+
+1. **Round 0, the seed.** 15,000 frames are tried, spread over both halves. None is from the public five minutes,
+   and none is a still frame (players standing about, as in a stoppage). A frame is labelled only where Metrica's
+   ball and the picture agree: the only ball-sized, round, whitish blob within 3 m of Metrica's ball, no more than
+   1.5 m from it, with nothing else bright within a metre. Metrica alone drifts onto players, and the picture alone
+   finds socks and kit, but both are rarely wrong at the same spot. The seed is strict, so it fires on only
+   **565 frames**. Each of them also gives "not a ball" examples: every other blob in the frame at least three ball
+   widths away.
+2. **Round 1.** A network is trained from scratch on those 565 frames, with every fifth one held out. Those held-out
+   frames are seed labels too: the validation asks whether the network finds the ball where Metrica and the picture
+   agreed, on frames it never trained on. It does so in 94.3% of them after the first epoch, and in 97.8% at the
+   epoch with the lowest validation loss, which is the one kept. It puts its top peak on a "not a ball" crop under
+   0.7% of the time. Model 1 then looks at 3,000 fresh frames and keeps a label wherever it is at least 80% sure:
+   **234 new balls**.
+3. **Rounds 2 to 17.** Each round trains a new network from scratch on every label so far. Before it starts, the
+   previous model is scored on the new validation set, as the baseline to beat. The bar for a new label comes down
+   a little each round as the models improve. Labels are kept one per 2 s moment, so the model does not learn twenty
+   copies of one picture, and every fourth round the same moments are opened again for the better model. That is why
+   the new labels jump at rounds 4, 8, 12 and 16 (801, 1,071, 1,214 and 1,312).
+4. **The model in use.** Model 17 was trained on **7,225 labelled frames**, 13 times what the seed gave. Its held-out
+   frames are every fifth of all those labels, most of them made by models 1 to 16. It finds the ball on 99.7% of
+   them, with 0.4% false alarms, and its validation loss is 0.075 against model 1's 0.221. It is copied to
+   `ballcv/models/ball.pt`.
+
+These scores measure agreement with labels the pipeline made itself, never with the truth. They show that each model
+learned its labels and generalised to frames it did not see. They cannot show that those labels were right. That is
+what the seed's caution is for (two independent sources, both wrong at the same spot, is rare). It is also what the
+later checks look for. Without any labels, we check that the ball's path through the detections is physical
+(section 4). Last of all, the organisers' public five minutes check possession as a whole, and no detector ever
+trained or validated on those frames.
+
+The other detectors run the same loop with their own seeds (the table above), so every label any of them learned
+from was made by an algorithm: first by two sources agreeing, then by the models themselves.
 
 **The ball and the touches.** The ball detector finds up to eight candidates a frame. Dynamic programming picks the
 smoothest physical path through them, in camera-stabilised pixels: the tactical camera only pans, tilts and zooms
@@ -133,20 +170,52 @@ camera and the officials (section 2), and judged each against physics:
 CHALLENGE.md asks for a change of possession only on *controlled* possession, and for `D` whenever the ball is not in
 play. Here is how we drew those lines.
 
-**Dead ball** (`stoppages.py`). A stoppage is found from four sources:
+We think of every cue as **evidence**, and the evidence comes in two kinds. Some tells us **that** something
+happened: play stopped, or the ball changed hands. Some tells us **when** it happened, to the frame. Few cues do both
+well. A set-piece tag is certain that play stopped, but it is dated loosely, often seconds off. The players slowing
+down can be timed to the frame, but on its own it proves nothing, since a player can stop running for any reason. So
+we **chain** evidence: the first link says the event happened, and the later links narrow down when. The order of
+play constrains the chain. A goal is scored only in play, a restart has to put the ball back in play, and a ball
+cannot be dead and live again at once.
 
-1. **That play stopped:** a set-piece tag, a stoppage whistle, or players setting up a restart (one standing at a
-   corner arc, or off the pitch over a touchline).
-2. **When it stopped:** the whistle; otherwise the ball leaving the pitch; otherwise the players easing off. The
-   assistant's flag only confirms an out the ball already shows, because the flag model is not reliable enough to
-   create one.
-3. **When it restarted:** the placed ball struck, for goal kicks and corners; the referee's restart whistle, for free
-   kicks; otherwise the players' pace rising out of its lull.
-4. **Who has the ball after:** the team named on the tag; otherwise the team of the player at the ball when it
-   restarts.
+**Dead ball** (`stoppages.py`). The evidence:
 
-**Live play: the rules, which we submit** (`ownball.control_roles`, then `possession/predict.py`). A touch by the
-team not in possession takes the ball only if it is controlled:
+| evidence | says **that** play stopped | says **when** |
+|---|---|---|
+| Set-piece and goal tags (Metrica) | yes, and which restart, and who takes it | loosely: seconds off |
+| The referee's stoppage whistle | yes | to a fraction of a second |
+| Players setting up a restart (one at a corner arc, or off the pitch over a touchline) | yes: players leave the pitch only while the ball is dead | no |
+| Our ball crossing a line, and staying off the pitch | yes, if it is not in the air (`ball3d.py`) | to the frame |
+| Our ball seen in the goal, for a tagged goal | with the tag | to the frame |
+| The referee's pip (a whistle too short to stand alone) | no | yes, once something else says play stopped |
+| The broadcast cutting away to a close-up or replays | weakly | roughly: play had stopped by then |
+| Nobody running for over 20 s (the three fastest players under a jog) | weakly: only with replays or a restart whistle | no |
+| The players easing off (the biggest drop in their pace) | no | yes, inside a window the other evidence gives |
+| The assistant's flag | no (see below) | only for an out something else found |
+
+So a tagged corner whose ball we lost goes **corner tag → nobody running → players stopped**. The tag says a corner
+is coming, the stretch with nobody running says play had stopped before it, and the players' pace dropping picks the
+frame. A goal goes **whistle → ball in the goal**: the whistle says play stopped, and our ball crossing the goal
+line, a moment before it, dates the stop. Over the match, our 88 stoppages are timed by the ball leaving the pitch
+(41), a whistle (20), the players' pace (15), the flag (4), the ball in the goal (3), the broadcast (3), and the
+referee's pip and the half's first frame (one each). The viewer shows each stoppage's chain, in order.
+
+**When play restarted** follows the same idea. Where the ball itself can be trusted, it decides: the placed ball
+struck, for a goal kick or a corner, or the kick after the referee's restart whistle, for a free kick. That covers 50
+of the 88 stoppages. Everywhere else, the players' pace rising out of its lull times the restart. A restart has to
+lead to play: if play stops again within a few seconds, or before anyone ran, it was the same stoppage. **Who has
+the ball after** is the team named on the tag, or otherwise the team of the player at the ball when it restarts.
+
+**The flag is the weakest evidence we have.** The flag detector (`flag_self.py`) taught itself, like the others, but
+it has much less to learn from. The assistants raise their flags only a handful of times in a match, and we have no
+hand labels to measure the detector against. It reports 85 raises over the match. On the near touchline 15% of them
+follow the ball going out, against 5% by chance, and on the far touchline none do. So a raise never makes a stoppage
+by itself. It only times an out that a tag or a set-up already says happened, and it does so for 4 of the 88.
+
+**Live play: the rules, which we submit** (`ownball.control_roles`, then `possession/predict.py`). Here too the
+evidence chains. A touch by the team not in possession says the ball *may* have changed hands. That team's next
+play on the ball says it did. The start of its stretch on the ball says when. A touch takes the ball only if it is
+controlled:
 
 | case | change of possession? |
 |---|---|
@@ -171,59 +240,67 @@ previous touch, the start of the half, or a dead ball. A player's touches and st
 
 ## 6. Reproduction
 
-The trained models are committed in `ballcv/models/`: the ball, kit, player, assistant and flag detectors.
-Regenerating the submission from them needs no training:
+**One command.** The trained models are committed in `ballcv/models/` (the ball, kit, player, assistant and flag
+detectors), so regenerating the submission needs no training:
 
 ```bash
 pip install -r requirements.txt          # Python 3.12; ffmpeg on the PATH
-# the match data unpacked into ./data (README.md)
-
-# caches and alignment
-python ballcv/cache_tracking.py                       # the ATD as arrays
-python alignment/align_broadcast.py                   # broadcast frame -> tactical frame
-python alignment/detect_whistles.py                   # the referee's whistles, learned from the kick-off tags
-python ballcv/refine_h.py fit                         # the homography snapped to the painted lines
-
-# the ball, the players and the officials, by the committed models
-for s in $(seq 0 10000 190000); do python ballcv/ownball.py detect $s $((s + 10000 < 199319 ? s + 10000 : 199319)); done
-python ballcv/ownball.py link
-python ballcv/player_det.py detect 11185 190197
-python ballcv/player_track.py run 11185 190197
-python ballcv/flag_self.py signals 11185 190197
-
-# touches, stoppages, possession -> evaluation/results/possession_touches.csv
-python ballcv/run_match.py
-python evaluation/validate_submission.py evaluation/results/possession_touches.csv
+# the match data unpacked into ./data (data/README.md)
+python reproduce.py                      # -> evaluation/results/possession_touches.csv, validated
+python reproduce.py --train              # the same, after training every model again from nothing
 ```
 
-To train the models again from nothing, before the detection steps (each `run` copies its last model into
-`ballcv/models/`, and skips the rounds it has already finished, so a stopped run carries on where it left off):
+`reproduce.py` runs the steps in order. Each is skipped when its output is already there, so a stopped run carries
+on where it left off:
 
-```bash
-python ballcv/selftrain.py run                        # the ball
-python ballcv/kit_team.py run                         # the kits
-python ballcv/player_det.py run                       # the players
-python ballcv/assistant_self.py run                   # the assistant referees
-python ballcv/flag_self.py run                        # their flags
+| step | script | writes |
+|---|---|---|
+| 1. the tracking, as arrays | `ballcv/cache_tracking.py` | `data/ballcv/work/align/tactical.npz`, `broadcast.npz` |
+| 2. broadcast frame → tactical frame | `alignment/align_broadcast.py` | `data/broadcast/BAR-ATH_broadcast_to_tactical.csv` |
+| 3. the referee's whistles, learned from the kick-off tags | `alignment/detect_whistles.py` | `data/broadcast/BAR-ATH_broadcast_whistles.csv`, `_whistle_pips.csv` |
+| 4. the homography, snapped to the painted lines | `ballcv/refine_h.py fit` | `work/align/homography_refined.npy` |
+| 5. the ball: candidates, then their best path | `ballcv/ownball.py detect`, `link` | `work/align/fullmatch/` |
+| 6. the players: detected, then tracked | `ballcv/player_det.py detect`, `player_track.py run` | `work/align/players/` |
+| 7. the assistants' flags | `ballcv/flag_self.py signals` | `work/align/flags/` |
+| 8. touches, stoppages, possession, and the viewer's files | `ballcv/run_match.py` | `data/ballcv/*.json`, `evaluation/results/possession_touches.csv` |
+
+With `--train`, the five detectors are trained before step 5 (`selftrain.py`, `kit_team.py`, `player_det.py`,
+`assistant_self.py` and `flag_self.py`, each `run`). Each copies its last model into `ballcv/models/` and skips the
+rounds it has already finished. Then steps 5 to 7 are made again with the new models.
+
+**Where everything lives.** The repository holds the code and the trained models. Everything made from the match
+lives under `data/`, which is gitignored like the match data itself (`MTAH_DATA_DIR` moves it elsewhere).
+`games.py` and `ballcv/paths.py` are the only places that spell out a path.
+
+```
+evaluation/results/possession_touches.csv     the submission: our possession, one label per tactical frame
+ballcv/models/                                the trained detectors: ball, kit, players, assistants, flags (committed)
+data/
+├─ tactical/                                  as provided (the video may keep its download name, ..._tactical-001.mp4)
+│  ├─ BAR-ATH_tactical.mp4
+│  ├─ BAR-ATH_tactical_atd.xml, _atd.txt      Metrica's tracking
+│  ├─ BAR-ATH_tactical_homography.csv
+│  └─ BAR-ATH_tactical_smart_tagging.xml      the set-piece and goal tags
+├─ broadcast/                                 as provided, plus what we derive from the broadcast:
+│  ├─ BAR-ATH_broadcast.mp4, _atd.*, _homography.csv
+│  ├─ BAR-ATH_broadcast_to_tactical.csv       step 2: the tactical frame and picture kind of every broadcast frame
+│  ├─ BAR-ATH_broadcast_red_fraction.npy      step 2's scan of the video, cached
+│  └─ BAR-ATH_broadcast_whistles.csv, _whistle_pips.csv     step 3
+├─ ballcv/                                    our outputs, read by possession/predict.py and the viewer
+│  ├─ BAR-ATH_touches.json                    the ball's path, touches, bounces, balls played, spells
+│  ├─ BAR-ATH_stoppages.json                  dead balls, each with its chain of evidence
+│  ├─ BAR-ATH_players_tracked.f32, .json      our player tracks, for the viewer
+│  ├─ BAR-ATH_assistants.json, _flags.json    the assistants and their flags, for the viewer
+│  └─ work/align/                             caches and intermediate files
+│     ├─ tactical.npz, broadcast.npz          step 1
+│     ├─ homography_refined.npy               step 4
+│     ├─ fullmatch/                           step 5: ball candidates per 10,000 frames, and the linked track
+│     ├─ players/                             step 6: detections (dets/) and tracks.npz; training rounds r0, r1, ...
+│     ├─ flags/, assistants/, kit/, self/     step 7, and the training rounds of the flag, assistant, kit and ball detectors
+│     ├─ ball3d.npz, broadcast_ball3d.json    step 8: the ball's height, and the broadcast's view of it, cached
+│     └─ touches/, motion_*.json              the unused touch detector (touch_self.py), not part of the pipeline
+└─ orbita-ball.png                            optional: the ball's product photo, only to measure its colour again
 ```
 
-`run_match.py` skips steps whose output is already newer than their inputs. Every cache lives under `data/`, which is
-gitignored like the match data itself. `cd viewer && npm install && npm run dev` opens the viewer
-(`viewer/README.md`), where every one of these outputs can be checked frame by frame.
-
-## 7. Limitations, and what we would do next
-
-- **Training is not seeded.** Training again gives slightly different models: round-to-round differences are about
-  1-2 points on the label-free checks. The committed models are what reproduce the submitted file exactly.
-- **Close pairs.** In about 12% of moments where two players stand within a metre of each other, the detector sees
-  one. The tracker then holds both on Metrica's numbers, which is right only as often as Metrica is.
-- **Mostly one camera.** The second view is used only to settle bounce against touch, and only where the broadcast
-  is live and shows the ball. It saw the ball at 82 of the 191 breaks it was asked about; the rest keep the picture's call. Elsewhere a
-  ball in the air is placed by its gravity arc, and a single camera can mistake a fast roll for a flight. Before
-  11593 the two cameras show the ball rolling where the arc fit had it flying. Running the broadcast detection on
-  every live frame, to give the ball's height everywhere, is the clearest next step.
-- **The flags are noisy.** On the near touchline, 15% of raises follow a ball going out, against 5% by chance; on
-  the far line, none do. So the flag only confirms.
-- **Unwhistled, untagged stoppages** depend on the ball being seen leaving the pitch, or on the players slowing down.
-- **The check is small.** The public window has 17 possessions, so differences of a few hundredths of spellF1
-  are inside the noise EVALUATION.md describes.
+`cd viewer && npm install && npm run dev` opens the viewer (`viewer/README.md`), where every one of these outputs can
+be checked frame by frame.

@@ -1,4 +1,4 @@
-"""A player detector that teaches itself: every player's feet in a frame, and whose kit he wears -- no hand labels.
+"""A player detector that teaches itself: every player's feet in a frame, and whose kit he wears.
 
 Metrica's tracking misses players, and mostly where it matters: all eleven of a team are tracked on only ~60% of
 live frames, and the ones missing are the hidden ones -- a Barcelona player marked from the camera side at the far

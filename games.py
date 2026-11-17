@@ -130,8 +130,15 @@ def asset_paths(game=GAME, data_dir=None, source=DEFAULT_SOURCE):
     root = data_dir or DATA_DIR
     entry = _source(game, source)
     folder = os.path.join(root, source)
-    return {name: os.path.join(folder, entry["stem"] + SUFFIXES[name])
-            for name in entry["assets"]}
+    paths = {name: os.path.join(folder, entry["stem"] + SUFFIXES[name])
+             for name in entry["assets"]}
+    # The download names the videos BAR-ATH_tactical-001.mp4 / BAR-ATH_broadcast-002.mp4; either name works.
+    if not os.path.exists(paths["video"]) and os.path.isdir(folder):
+        downloaded = sorted(f for f in os.listdir(folder)
+                            if f.startswith(entry["stem"] + "-") and f.endswith(SUFFIXES["video"]))
+        if downloaded:
+            paths["video"] = os.path.join(folder, downloaded[0])
+    return paths
 
 
 def _source(game, source):

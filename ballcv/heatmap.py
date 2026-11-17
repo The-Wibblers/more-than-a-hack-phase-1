@@ -1,7 +1,7 @@
 """The heatmap network our detectors share: a small fully-convolutional encoder-decoder whose output is a "here"
 heatmap at 1/STRIDE resolution, its Gaussian targets, augmentation and focal loss, and peak finding over the pitch.
 
-The ball detector is BallFCN trained by selftrain.py (no hand labels): models/ball.pt, the last of its 18 rounds.
+The ball detector is BallFCN trained by selftrain.py: models/ball.pt, the last of its 18 rounds.
 player_det.py's PlayerFCN is the same network one stage deeper.
 """
 import os

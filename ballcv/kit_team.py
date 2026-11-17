@@ -19,8 +19,8 @@ are the model's, not Metrica's: where they disagree with the slot's team is exac
 frames are new; frames are never in the public five minutes (PUBLIC), never still (selftrain.STILL) and always in a
 half.
 
-Nothing is scored against hand labels (there are none for kits). Printed every epoch: validation accuracy on held-out
-labels (every VAL_EVERY-th frame), per class; every round: how many new labels, and how many disagree with Metrica.
+Printed every epoch: validation accuracy on held-out labels (every VAL_EVERY-th frame), per class; every round: how
+many new labels, and how many disagree with Metrica.
 
   python ballcv/kit_team.py run        every round in turn (you run this); finished rounds are skipped; at the end the
                                        last model is copied to ballcv/models/kit.pt, which player_det.py's seed uses

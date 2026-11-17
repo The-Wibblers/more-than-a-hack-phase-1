@@ -1,4 +1,4 @@
-"""A ball detector that teaches itself: the ball's centre pixel in a frame, like heatmap.py, but with no hand labels.
+"""A ball detector that teaches itself: the ball's centre pixel in a frame, like heatmap.py.
 
   python ballcv/selftrain.py run         every round in turn, 0 to ROUNDS - 1 (you run this); a finished round (its
                                          labels.json written) is skipped, a trained model (trained.json) is not
@@ -161,7 +161,7 @@ def open_frames(r):
     return pool[~near[pool]]
 
 
-VIDEO = __import__('paths').DATA + 'tactical/BAR-ATH_tactical-001.mp4'
+VIDEO = __import__('paths').TACTICAL_VIDEO
 
 
 def stream(runs, step=1):

@@ -60,7 +60,7 @@ def main():
         if w['role'] == 'restart' and not around.any():
             found.append((f, 'restart whistle in play', f'{w["score"]} dB, {w["kind"]}; live as {label[f]}'))
 
-    alignment = list(csv.DictReader(open(__import__('paths').DATA + 'broadcast/BAR-ATH_broadcast_to_tactical.csv')))
+    alignment = list(csv.DictReader(open(__import__('paths').ALIGNMENT)))
     i = 0
     while i < len(alignment):
         if alignment[i]['kind'] in ('replay', 'wipe'):

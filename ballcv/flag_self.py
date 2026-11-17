@@ -449,7 +449,7 @@ def cmd_raises(a, b):
     exits = np.flatnonzero(off[1:] & on[:-1]) + 1
     exits = exits[(exits >= a) & (exits <= b)]
     marks = [(e, e) for e in exits] + [(t - stoppages.OUT_S * 25, t + stoppages.TAG_LEAD_S * 25) for t, _k, _ in stoppages.tagged_outs()] + \
-        [(int(r['tactical_frame']),) * 2 for r in _csv.DictReader(open(__import__('paths').DATA + 'broadcast/BAR-ATH_broadcast_whistles.csv'))]
+        [(int(r['tactical_frame']),) * 2 for r in _csv.DictReader(open(__import__('paths').WHISTLES))]
     seen = np.zeros(200000, bool); seen[np.unique(sig['frame'])] = True
     after_exit = np.zeros(200000, bool); busy = np.zeros(200000, bool)
     for e in exits:
