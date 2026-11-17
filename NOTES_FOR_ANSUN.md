@@ -155,41 +155,6 @@ the same bug at different severities.
 
 ---
 
-## 9. Control-then-kick-out read as a block (no possession change) — FIXED (driven touch)
-
-**Fix in this branch (`ownball.py`):** a touch that sends the ball away faster than it arrived
-(`v_out >= v_in + DRIVEN_MS`, 2 m/s) added energy, so it is a deliberate play (control/clearance), not a
-passive block — a block cannot speed the ball up. Added `driven` to the possession-taking condition in
-`control_roles`. 114688 now flips to **H**. Blocks 37 -> 24 (29 touches reclassified, all clear driven plays
-— e.g. a 4 m/s ball struck away at 34 m/s). **0 frames changed in the 5-min window; spellF1 0.8267, macroF1
-0.9717 unchanged.** Physically grounded, not tuned.
-
-_Original diagnosis:_
-
-**Frame 114688.** A Home player controls Athletic's ball and kicks it out (throw-in follows at 114771,
-timed by the assistant flag). Possession never leaves **A** — the H touch at 114688 is `role='block'`.
-
-**Why:** `control_roles` calls the H touch a block because the ball reached him *not loose* (straight off A's
-control at 114624) and his team's next play isn't H (A touches again at 114742 — but that is A merely
-receiving the ball H knocked away; it bounces toward an A player 114698–114729 first). The ball motion says
-it was a real play, not a passive deflection: `v_in 2.9 → v_out 7.6` (it sped up and left).
-
-**Two possible levers (both central `ownball.py` / possession logic):**
-1. A touch whose ball *speeds up and leaves* (v_out > v_in, driven) is a play on the ball, not a block —
-   distinguish control/clearance from a passive ricochet by the velocity change, not only by who touches next.
-2. More robustly: a team's touch that is the **last before the ball goes dead** (a stoppage follows) ends the
-   sequence — the team that put it out conceded it, regardless of block-vs-control. The rule currently decides
-   possession before it knows the ball went out.
-
-**Unverifiable on our side:** 114688 is in the 2nd half but **outside the public 5-min window**, and this is
-`control_roles` — it governs every challenge in the match, so a wrong nudge could regress scored possessions
-with no local signal. Flagged for Ansun rather than hand-fixed.
-
-(Note: our own ball track does not actually show the exit here — it stays ~4-8 m inside near the top
-touchline — so the out itself was only caught by the assistant flag / tag, not the ball leaving.)
-
----
-
 ## Pattern notes
 
 - **Stoppage boundaries** (#2, #4, #6): pinning when play stops/restarts when the ball is near a line, a
