@@ -58,6 +58,10 @@ STALE_FRAMES = 12      # a track whose position has not moved for this long is f
 CLAIM_GAP_S = 1.0       # keeper claim: the ball vanishes for at least this long ...
 CLAIM_REACH_M = 2.0     # ... last seen within this distance of a goalkeeper ...
 BOX_DEPTH_M, BOX_HALF_W_M = 16.5, 20.16   # ... who is inside his own penalty area
+CLAIM_HOLD_S = 1.0      # keeper claim we DO see: the ball sits within CLAIM_HOLD_REACH_M of a goalkeeper in his own
+CLAIM_HOLD_REACH_M = 1.0  # box for this long (brief losses up to CLAIM_GAP_S bridged) -- a clean catch that never vanishes
+CATCH_REACH_M = 0.6     # a ball reaching a keeper's hands (he plucked it from the air): within this, right at him ...
+CATCH_GAP_S = 0.4       # ... then lost for even this short a time (less than CLAIM_GAP_S) is still a catch
 
 def H(M, f, g):
     """pixel map frame f -> frame g (exact for a fixed-centre camera)."""
@@ -290,7 +294,8 @@ def keeper_claims(M, P, track, f0, f1, sides):
     out = []
     fs = sorted(track)
     for a, b in zip(fs, fs[1:]):
-        if (b - a) / 25.0 < CLAIM_GAP_S:
+        gap = (b - a) / 25.0
+        if gap < CATCH_GAP_S:                                   # too brief to be anything
             continue
         found = None
         for f, how in ((a, 'last seen at the keeper'), (b, 'reappears with the keeper')):
@@ -301,7 +306,8 @@ def keeper_claims(M, P, track, f0, f1, sides):
                 feet, top = column(M[f], P[f, k] * [L, W]); ab = top - feet
                 tt = float(np.clip((pos - feet) @ ab / max(1e-9, ab @ ab), 0, 1))
                 dist = np.linalg.norm(pos - (feet + tt * ab)) / ppm(M[f], feet)
-                if dist <= CLAIM_REACH_M:
+                # a full vanish within reach is a claim; a ball right at his hands with even a short gap is a catch
+                if (gap >= CLAIM_GAP_S and dist <= CLAIM_REACH_M) or dist <= CATCH_REACH_M:
                     found = (f, k, t, dist, how); break
             if found:
                 break
@@ -317,6 +323,40 @@ def keeper_claims(M, P, track, f0, f1, sides):
             out.append(dict(f=f, kind='touch', slot=k + 1, team=t, dist_m=round(float(dist), 2), body='hands',
                             conf='keeper claim', claim=True, how=how, dv_ms=None,
                             u=round(float(uv[0]), 1), v=round(float(uv[1]), 1)))
+    return out
+
+
+def keeper_holds(M, P, track, f0, f1, sides):
+    """Keeper claim for a ball we DO keep seeing: it sits within CLAIM_HOLD_REACH_M of a goalkeeper inside his own box
+    for CLAIM_HOLD_S or longer (brief losses of up to CLAIM_GAP_S bridged). A clean catch that stays visible never
+    vanishes, so keeper_claims misses it; this catches the hold. Dated at the first frame he has it."""
+    near = {}                                                   # keeper slot -> [(frame, team, dist)] while he holds it
+    for f in sorted(track):
+        if not f0 <= f <= f1:
+            continue
+        pos = track[f][:2]
+        for k, t in goalkeepers_at(P, f, sides):
+            if box_team(P[f, k] * [L, W], sides(f)) is None:
+                continue
+            feet, top = column(M[f], P[f, k] * [L, W]); ab = top - feet
+            tt = float(np.clip((pos - feet) @ ab / max(1e-9, ab @ ab), 0, 1))
+            dist = np.linalg.norm(pos - (feet + tt * ab)) / ppm(M[f], feet)
+            if dist <= CLAIM_HOLD_REACH_M:
+                near.setdefault(k, []).append((f, t, dist))
+    out = []
+    for k, pts in near.items():
+        runs = [[pts[0]]]                                       # group into holds, bridging losses up to CLAIM_GAP_S
+        for prev, cur in zip(pts, pts[1:]):
+            if (cur[0] - prev[0]) / 25.0 <= CLAIM_GAP_S:
+                runs[-1].append(cur)
+            else:
+                runs.append([cur])
+        for r in runs:
+            if (r[-1][0] - r[0][0]) / 25.0 >= CLAIM_HOLD_S:     # held long enough -> one claim, dated when he got it
+                f, t, dist = r[0]
+                out.append(dict(f=f, kind='touch', slot=k + 1, team=t, dist_m=round(float(dist), 2), body='hands',
+                                conf='keeper claim', claim=True, how='held at the keeper', dv_ms=None,
+                                u=round(float(track[f][0]), 1), v=round(float(track[f][1]), 1)))
     return out
 
 
@@ -623,7 +663,12 @@ def cmd_events():
     print(f'{len(asked)} breaks that look like bounces or are high on a body in the picture: the broadcast camera sees the ball '
           f'at {sum(a is not None for a in asked)}, and puts it beyond his reach at {sum(a is False for a in asked)} -- not '
           f'touches', flush=True)
-    events = sorted(events + keeper_claims(M, P, track, f0, f1, sides), key=lambda e: e['f'])
+    claims = sorted(keeper_claims(M, P, track, f0, f1, sides) + keeper_holds(M, P, track, f0, f1, sides), key=lambda e: e['f'])
+    deduped = []                                                # a vanish-claim and a hold-claim often name the same catch
+    for c in claims:
+        if not any(d['slot'] == c['slot'] and 0 <= c['f'] - d['f'] <= CLAIM_HOLD_S * 25 for d in deduped):
+            deduped.append(c)
+    events = sorted(events + deduped, key=lambda e: e['f'])
     # a ball high in the air passing over a player reads as a touch at head height (its ray crosses his head). Metrica's
     # ball is smoothed too much to see a quick touch, but a high ball does travel straight: where Metrica's ball goes
     # straight through (STRAIGHT_DEG) a head-height touch, the ball flew past
