@@ -1,20 +1,49 @@
 """Verify what a change actually did to a possession file, beyond the 5-minute score.
 
-The public ground truth covers only frames 11185-18684 (5 minutes of 199,319). A change can move hundreds
-of frames out in the 90% of the match that has no ground truth, where run_evaluation.py is blind. This tool
-makes those changes reviewable instead of a bare frame count: it groups them into possession sequences you
-can open in the viewer, and flags whether any land in the scored window (if none do, the 5-min score cannot
-judge the change at all).
+WHY THIS EXISTS
+    The public ground truth covers only frames 11185-18684 -- 5 minutes of 199,319 (2.5%). A rule or
+    detection change can move hundreds of frames out in the other 97.5% of the match, where there is no
+    ground truth and run_evaluation.py is blind. The 5-minute score staying flat does NOT mean a change was
+    safe: it usually means the change did not touch those 7,500 frames at all. (A real example: a touch rule
+    moved 1,340 frames across 22 possessions, none of them in the scored window -- the score said 'unchanged'
+    while saying nothing about the 22 sequences that actually changed.)
 
-    # before a change:
-    cp evaluation/results/possession_touches.csv /tmp/before.csv
-    # ... make the change, regenerate ...
-    python evaluation/verify_change.py /tmp/before.csv evaluation/results/possession_touches.csv
+    This tool turns 'N frames changed' into something you can actually review: the possession SEQUENCES that
+    changed, each one openable in the viewer, plus whether any land in the scored window, plus whether the
+    possession structure stayed realistic.
 
-It prints, in order:
-  1. the possession SEQUENCES that changed  (frame range, duration, old -> new team) -- each one to eyeball
-  2. how many changed frames fall in the SCORED window 11185-18684 (0 => the score says nothing about this)
+SETUP
+    Nothing to install -- standard library only (csv). Run it with the repo's .venv python so paths resolve:
+        .venv/bin/python evaluation/verify_change.py <before.csv> <after.csv>
+
+HOW TO USE IT (the loop for every change)
+    1. Snapshot the current possession file BEFORE you change anything:
+         cp evaluation/results/possession_touches.csv /tmp/before.csv
+    2. Make your code change and regenerate the possession file, e.g.:
+         python ballcv/ownball.py events && python possession/stoppages.py && python possession/predict.py
+       (regenerate only the stages downstream of what you changed; a predict.py-only change needs just
+       predict.py.)
+    3. Compare:
+         .venv/bin/python evaluation/verify_change.py /tmp/before.csv evaluation/results/possession_touches.csv
+    4. Also run the 5-minute score as before:
+         python evaluation/run_evaluation.py
+
+WHAT IT PRINTS
+  1. the possession SEQUENCES that changed  (frame range, duration, old -> new team) -- open each in the
+     viewer at /frame/<start> to confirm it is a fix and not a regression
+  2. how many changed frames fall in the SCORED window 11185-18684
+       -> 0 means the 5-minute score CANNOT judge this change; it must be reviewed by eye
   3. possession count and mean duration, before and after, against the ground truth's ~14.2 s reference
+       -> a change that explodes the count, or drifts mean duration far from ~14 s, is a red flag
+
+HOW TO READ IT
+  - Few sequences, each a clear fix in the viewer, structure steady  -> good change, keep it.
+  - Many sequences you cannot explain, or structure drifting         -> likely regression, revert or narrow.
+  - 0 changed frames in the scored window                            -> the score is no evidence either way;
+                                                                        the eyeball review IS the evidence.
+
+It is a review aid, not a pass/fail gate: outside the 5 minutes there is no ground truth, so judgement
+(does each changed sequence look right in the viewer?) is the final check.
 """
 import csv
 import sys
